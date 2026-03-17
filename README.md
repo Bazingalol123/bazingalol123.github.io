@@ -1,15 +1,28 @@
 # Shared Shopping List — GitHub Pages + Google Sheets + Apps Script
 
-This project gives you a shared shopping list with:
-- static frontend for GitHub Pages
+A full-featured shared shopping list PWA with:
+- static frontend for GitHub Pages (installable PWA)
 - Google Sheets as the live data source
 - Google Apps Script as the secure write layer
 - no API keys or secrets hardcoded in the repository
 
+## Features
+- **Multiple lists** — create, rename, delete, and duplicate shopping lists
+- **List management** — clear completed (purchased) items in bulk
+- **Categories view** — items grouped by category in a dedicated tab
+- **Price estimation** — metric card showing estimated total for remaining items
+- **Item notes** — visible notes displayed under each item
+- **Optimistic UI** — instant feedback with rollback on errors
+- **Version polling** — auto-sync when data changes on the server
+- **PWA installable** — works offline with service worker caching
+- **Shared secret auth** — simple passphrase-based write protection
+- **RTL support** — full right-to-left Hebrew interface
+
 ## What you get
-- `index.html`, `styles.css`, `app.js` — the static app
-- `apps-script/Code.gs` — full Apps Script backend
-- `apps-script/appsscript.json` — Apps Script manifest
+- `index.html`, `styles.css`, `app.js` — the static PWA frontend
+- `apps-script/Code.gs` — complete Apps Script backend (ready to copy into Google Apps Script)
+- `apps-script/appsscript.json` — Apps Script manifest (ready to copy)
+- `sw.js`, `manifest.json` — PWA service worker and manifest
 - `seed-items.csv` — optional seed data from your current list
 
 ## Security model
@@ -34,11 +47,15 @@ That means:
 You can also import rows from `seed-items.csv`, but **only into the columns `name, quantity, category, notes`** if you are doing it manually.
 
 ## Step 2 — Create Apps Script
+The `apps-script/` directory contains the complete backend files ready to be copied into Google Apps Script:
+
 1. Open the Google Sheet
 2. Go to `Extensions` → `Apps Script`
 3. Replace the default `Code.gs` with the contents of `apps-script/Code.gs`
 4. Open project settings and enable the `appsscript.json` manifest if needed
 5. Replace the manifest with the contents of `apps-script/appsscript.json`
+
+> **Note:** The `apps-script/Code.gs` file includes all 12 API action handlers (item CRUD, list management, and bulk operations). No additional script files are needed.
 
 ## Step 3 — Add Script Properties
 In Apps Script:
@@ -74,11 +91,21 @@ If you later change the script, create a new deployment version or redeploy.
 
 ## How the frontend works
 The frontend calls the Apps Script URL with these actions:
-- `list`
-- `add`
-- `update`
-- `toggle`
-- `delete`
+
+| Action | Method | Description |
+|--------|--------|-------------|
+| `list` | GET | Get items for a list |
+| `version` | GET | Get data version for sync |
+| `add` | POST | Add item to a list |
+| `update` | POST | Update an existing item |
+| `toggle` | POST | Toggle item purchased state |
+| `delete` | POST | Delete an item |
+| `getLists` | GET | Get all lists with item counts |
+| `createList` | POST | Create a new list (sheet tab) |
+| `renameList` | POST | Rename a list |
+| `deleteList` | POST | Delete a list |
+| `duplicateList` | POST | Duplicate a list |
+| `clearCompleted` | POST | Clear all purchased items from a list |
 
 The write secret is **not** embedded in code.
 Each user enters it in the UI.
@@ -105,7 +132,7 @@ If you want automatic seeding from CSV directly into the correct schema, I can a
 
 ## Nice next upgrades
 - auto-refresh every 5–10 seconds
-- category grouping
 - user attribution (who checked what)
-- archive / restore
-- mobile-first PWA installable app
+- archive / restore completed lists
+- item image attachments
+- barcode scanning for quick add

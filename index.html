@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="styles.css?v=5" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
@@ -43,6 +43,10 @@
           <strong id="metricLeft">0</strong>
           <span class="metric-label">נותר</span>
         </div>
+        <div class="metric-card metric-price">
+          <div class="metric-value" id="metricPrice">₪0</div>
+          <div class="metric-label">עלות משוערת</div>
+        </div>
       </div>
     </header>
 
@@ -60,7 +64,7 @@
     <div class="app-backdrop" id="appBackdrop"></div>
 
     <main class="app-main">
-      <section class="tab-panel active" data-tab="list">
+      <section class="tab-panel active" data-tab="list" role="tabpanel" id="panel-list" aria-labelledby="tab-list">
       <section class="card glass filters-card">
         <div class="section-head compact">
           <div>
@@ -69,7 +73,7 @@
           </div>
           <div class="inline-statuses">
             <span class="status-chip" id="connectionChip">לא מחובר</span>
-            <span class="status-chip disconnected" id="syncChip">ממתין</span>
+            <span class="status-chip disconnected" id="syncChip" aria-live="polite">ממתין</span>
           </div>
         </div>
 
@@ -97,11 +101,11 @@
 
     <button id="openAddDialogBtn" class="fab" type="button" aria-label="הוסף פריט">＋</button>
 
-    <dialog id="addDialog" class="add-dialog">
+    <dialog id="addDialog" class="add-dialog" aria-labelledby="addDialogTitle">
       <form id="addItemForm" class="dialog-card" method="dialog">
         <div class="section-head compact">
           <div>
-            <h3>הוסף פריט</h3>
+            <h3 id="addDialogTitle">הוסף פריט</h3>
             <p class="muted">הפריט יתווסף מייד ל־Google Sheet.</p>
           </div>
         </div>
@@ -150,21 +154,13 @@
       </form>
     </dialog>
 
-    <section class="tab-panel" data-tab="add">
-      <section class="card glass add-card section-stack">
-        <div class="section-head compact">
-          <div>
-            <h3>הוספת פריט</h3>
-            <p class="muted">השתמש בכפתור כדי לפתוח את טופס הוספה.</p>
-          </div>
-        </div>
-        <div class="action-row">
-          <button id="openAddDialogBtnTab" type="button">הוסף פריט</button>
-        </div>
-      </section>
+    <section id="panel-categories" class="tab-panel" data-tab="categories" role="tabpanel" aria-labelledby="tab-categories">
+      <div class="categories-container" id="categoriesList">
+        <p class="empty-state-text">אין קטגוריות עדיין. הוסף פריטים עם קטגוריות כדי לראות אותם כאן.</p>
+      </div>
     </section>
 
-    <section class="tab-panel" data-tab="sync">
+    <section class="tab-panel" data-tab="sync" role="tabpanel" id="panel-sync" aria-labelledby="tab-sync">
       <section class="top-grid single-col">
         <section class="card glass settings-card">
           <div class="section-head">
@@ -220,7 +216,7 @@
       </section>
     </section>
 
-    <section class="tab-panel" data-tab="more">
+    <section class="tab-panel" data-tab="more" role="tabpanel" id="panel-more" aria-labelledby="tab-more">
       <section class="card glass settings-card">
         <div class="section-head compact">
           <div>
@@ -228,7 +224,7 @@
             <p class="muted">טיפים ושימוש שוטף</p>
           </div>
         </div>
-        <div id="statusMessage" class="status-message hidden"></div>
+        <div id="statusMessage" class="status-message hidden" aria-live="polite" role="status"></div>
         <div class="tips-list">
           <div class="tip-card"><strong>שיתוף</strong><span>שלחו את אותו URL לשניכם, עם אותו Apps Script ואותה סיסמה.</span></div>
           <div class="tip-card"><strong>אמינות</strong><span>אם שניכם עורכים אותו פריט בו־זמנית, השינוי האחרון ינצח.</span></div>
@@ -238,17 +234,26 @@
     </section>
   </main>
 
-  <nav class="bottom-nav glass card" aria-label="תפריט תחתון">
-    <button class="nav-btn active" data-target-tab="list">רשימה</button>
-    <button class="nav-btn" data-target-tab="add">הוספה</button>
-    <button class="nav-btn" data-target-tab="sync">סנכרון</button>
-    <button class="nav-btn" data-target-tab="more">עוד</button>
+  <nav class="bottom-nav glass card" role="tablist" aria-label="תפריט תחתון">
+    <button class="nav-btn active" data-target-tab="list" role="tab" aria-selected="true" aria-controls="panel-list" id="tab-list">
+      <span class="nav-icon">📋</span>רשימה
+    </button>
+    <button class="nav-btn" data-target-tab="categories" role="tab" aria-selected="false" aria-controls="panel-categories" id="tab-categories">
+      <span class="nav-icon">📂</span>
+      <span class="nav-label">קטגוריות</span>
+    </button>
+    <button class="nav-btn" data-target-tab="sync" role="tab" aria-selected="false" aria-controls="panel-sync" id="tab-sync">
+      <span class="nav-icon">🔄</span>סנכרון
+    </button>
+    <button class="nav-btn" data-target-tab="more" role="tab" aria-selected="false" aria-controls="panel-more" id="tab-more">
+      <span class="nav-icon">⚙️</span>עוד
+    </button>
   </nav>
 
   <template id="itemTemplate">
     <li class="item-card">
       <label class="check-wrap">
-        <input class="toggle-item" type="checkbox" />
+        <input class="toggle-item" type="checkbox" aria-label="סמן כנקנה" />
         <span class="check-ui"></span>
       </label>
       <div class="item-main">
@@ -275,11 +280,11 @@
     </li>
   </template>
 
-  <dialog id="editDialog" class="edit-dialog">
+  <dialog id="editDialog" class="edit-dialog" aria-labelledby="editDialogTitle">
     <form id="editItemForm" method="dialog" class="dialog-card">
       <div class="section-head compact">
         <div>
-          <h3>עריכת פריט</h3>
+          <h3 id="editDialogTitle">עריכת פריט</h3>
           <p class="muted">עדכון נשמר ישירות בגיליון.</p>
         </div>
       </div>
@@ -317,6 +322,60 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=4"></script>
+  <div id="loadingOverlay" class="loading-overlay" hidden aria-label="טוען..." role="status">
+    <div class="spinner"></div>
+  </div>
+
+  <dialog id="confirmDialog" class="confirm-dialog" aria-labelledby="confirmDialogTitle">
+    <div class="dialog-content">
+      <h3 id="confirmDialogTitle">אישור מחיקה</h3>
+      <p id="confirmDialogMessage">האם למחוק את הפריט?</p>
+      <div class="dialog-actions">
+        <button id="confirmCancel" class="btn-secondary">ביטול</button>
+        <button id="confirmOk" class="btn-danger">מחיקה</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="promptDialog" class="app-dialog">
+    <div class="dialog-content">
+      <h3 id="promptDialogTitle">כותרת</h3>
+      <input type="text" id="promptDialogInput" class="dialog-input" placeholder="" autocomplete="off" />
+      <div class="dialog-actions">
+        <button id="promptDialogCancel" class="btn btn-ghost">ביטול</button>
+        <button id="promptDialogOk" class="btn btn-primary">אישור</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="listActionsDialog" class="app-dialog">
+    <div class="dialog-content">
+      <h3 id="listActionsTitle">פעולות רשימה</h3>
+      <div class="list-actions-menu">
+        <button id="listActionRename" class="list-action-btn">
+          <span class="action-icon">✏️</span>
+          <span>שינוי שם</span>
+        </button>
+        <button id="listActionDuplicate" class="list-action-btn">
+          <span class="action-icon">📋</span>
+          <span>שכפול רשימה</span>
+        </button>
+        <button id="listActionClear" class="list-action-btn">
+          <span class="action-icon">🧹</span>
+          <span>נקה פריטים שנרכשו</span>
+        </button>
+        <hr class="action-divider" />
+        <button id="listActionDelete" class="list-action-btn list-action-danger">
+          <span class="action-icon">🗑️</span>
+          <span>מחיקת רשימה</span>
+        </button>
+      </div>
+      <div class="dialog-actions">
+        <button id="listActionsClose" class="btn btn-ghost">סגור</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app.js?v=5"></script>
 </body>
 </html>
