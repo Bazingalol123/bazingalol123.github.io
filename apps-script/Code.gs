@@ -1,276 +1,546 @@
 /**
- * Google Apps Script for a shared shopping list with multiple lists.
+ * Code.gs — Google Apps Script Backend for Shopping List PWA
  *
- * Sheets:
- * Lists: id | name | createdAt
- * Items: rowId | listId | name | quantity | category | notes | price | image | purchased | createdAt | updatedAt
+ * Serves as the API backend deployed as a Google Apps Script Web App.
+ * Each Google Sheet tab represents a shopping list; rows represent items.
  *
- * Recommended Script Properties:
- * LIST_SHARED_SECRET = choose-a-secret-value   (optional but recommended)
+ * Column Schema (Row 1 = headers, data starts at row 2):
+ *   A: rowId | B: name | C: quantity | D: category | E: notes
+ *   F: purchased | G: createdAt | H: updatedAt | I: price | J: image
+ *
+ * Auth: Every request must include a `secret` param validated against
+ *       ScriptProperties.getProperty('LIST_SHARED_SECRET').
+ *
+ * Supported actions (12 total):
+ *   GET  — list, version, getLists
+ *   POST — add, update, toggle, delete, createList, renameList,
+ *          deleteList, duplicateList, clearCompleted
  */
 
-const LISTS_HEADERS = ['id', 'name', 'createdAt'];
-const ITEMS_HEADERS = ['rowId', 'listId', 'name', 'quantity', 'category', 'notes', 'price', 'image', 'purchased', 'createdAt', 'updatedAt'];
+// ─── Column Constants ────────────────────────────────────────────────
+const COL = {
+  ROW_ID:     1,  // A
+  NAME:       2,  // B
+  QUANTITY:   3,  // C
+  CATEGORY:   4,  // D
+  NOTES:      5,  // E
+  PURCHASED:  6,  // F
+  CREATED_AT: 7,  // G
+  UPDATED_AT: 8,  // H
+  PRICE:      9,  // I
+  IMAGE:      10  // J
+};
 
+const HEADERS = [
+  'rowId', 'name', 'quantity', 'category', 'notes',
+  'purchased', 'createdAt', 'updatedAt', 'price', 'image'
+];
+
+const NUM_COLS = HEADERS.length;
+
+// Characters forbidden in Google Sheets tab names
+const FORBIDDEN_NAME_CHARS = /[\[\]*?\/\\]/;
+
+// ─── Configuration ───────────────────────────────────────────────────
+
+/**
+ * Read configuration from Script Properties.
+ * @returns {{ secret: string, defaultSheet: string }}
+ */
+function getConfig() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    secret: props.getProperty('LIST_SHARED_SECRET') || '',
+    defaultSheet: props.getProperty('SHEET_NAME') || 'ShoppingList'
+  };
+}
+
+/**
+ * Get the active spreadsheet (cached per execution).
+ * @returns {GoogleAppsScript.Spreadsheet.Spreadsheet}
+ */
+function getSpreadsheet() {
+  return SpreadsheetApp.getActive();
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────
+
+/**
+ * Validate the provided secret against the stored Script Property.
+ * Throws if the secret doesn't match (and a secret is configured).
+ * @param {string} provided - The secret sent by the client.
+ */
+function validateSecret(provided) {
+  const config = getConfig();
+  if (config.secret && provided !== config.secret) {
+    throw new Error('סיסמה שגויה');
+  }
+}
+
+// ─── Response Helpers ────────────────────────────────────────────────
+
+/**
+ * Return a JSON success response: { ok: true, ...data }.
+ * @param {Object} data - Additional fields to merge into the response.
+ * @returns {GoogleAppsScript.Content.TextOutput}
+ */
+function jsonOk(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true, ...data }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Return a JSON error response: { ok: false, error: message }.
+ * @param {string} message - Human-readable error description.
+ * @returns {GoogleAppsScript.Content.TextOutput}
+ */
+function jsonError(message) {
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: false, error: message }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ─── HTTP Handlers ───────────────────────────────────────────────────
+
+/**
+ * Handle GET requests. Routes by `action` query parameter.
+ * Supported actions: list, version, getLists.
+ * @param {GoogleAppsScript.Events.DoGet} e
+ */
 function doGet(e) {
-  return handleRequest_(e, 'GET');
-}
-
-function doPost(e) {
-  return handleRequest_(e, 'POST');
-}
-
-function handleRequest_(e, method) {
   try {
-    const payload = getPayload_(e, method);
-    authorize_(payload.secret);
+    const action = e.parameter.action;
+    const secret = e.parameter.secret || '';
+    validateSecret(secret);
 
-    const action = String(payload.action || '').trim();
-    if (!action) throw new Error('Missing action');
-
-    let result;
     switch (action) {
       case 'list':
-        result = { items: listItems_(payload.listId), version: getVersion_() };
-        break;
-      case 'add':
-        result = addItem_(payload);
-        break;
-      case 'update':
-        result = updateItem_(payload);
-        break;
-      case 'toggle':
-        result = toggleItem_(payload);
-        break;
-      case 'delete':
-        result = deleteItem_(payload);
-        break;
+        return jsonOk(handleListItems({ listId: e.parameter.listId }));
       case 'version':
-        result = { version: getVersion_() };
-        break;
+        return jsonOk(handleVersion(e.parameter.listId));
       case 'getLists':
-        result = { lists: getLists_() };
-        break;
-      case 'createList':
-        result = createList_(payload);
-        break;
-      case 'updateList':
-        result = updateList_(payload);
-        break;
-      case 'deleteList':
-        result = deleteList_(payload);
-        break;
+        return jsonOk(handleGetLists());
       default:
-        throw new Error(`Unsupported action: ${action}`);
+        return jsonError('Unknown action: ' + action);
     }
-
-    return jsonOutput_({ ok: true, ...result });
-  } catch (error) {
-    return jsonOutput_({ ok: false, error: error.message });
+  } catch (err) {
+    return jsonError(err.message);
   }
 }
 
-function getPayload_(e, method) {
-  if (method === 'POST') {
-    if (!e || !e.postData || !e.postData.contents) return {};
-    return JSON.parse(e.postData.contents);
+/**
+ * Handle POST requests. Routes by `action` in the JSON body.
+ * Supported actions: add, update, toggle, delete, createList,
+ *   renameList, deleteList, duplicateList, clearCompleted.
+ * @param {GoogleAppsScript.Events.DoPost} e
+ */
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+    const action = body.action;
+    validateSecret(body.secret || '');
+
+    switch (action) {
+      case 'add':
+        return jsonOk(handleAddItem(body));
+      case 'update':
+        return jsonOk(handleUpdateItem(body));
+      case 'toggle':
+        return jsonOk(handleToggleItem(body));
+      case 'delete':
+        return jsonOk(handleDeleteItem(body));
+      case 'createList':
+        return jsonOk(handleCreateList(body));
+      case 'renameList':
+        return jsonOk(handleRenameList(body));
+      case 'deleteList':
+        return jsonOk(handleDeleteList(body));
+      case 'duplicateList':
+        return jsonOk(handleDuplicateList(body));
+      case 'clearCompleted':
+        return jsonOk(handleClearCompleted(body));
+      default:
+        return jsonError('Unknown action: ' + action);
+    }
+  } catch (err) {
+    return jsonError(err.message);
   }
-  return (e && e.parameter) ? e.parameter : {};
 }
 
-function authorize_(providedSecret) {
-  const expectedSecret = PropertiesService.getScriptProperties().getProperty('LIST_SHARED_SECRET');
-  if (!expectedSecret) return; // secret disabled
-  if (String(providedSecret || '') !== String(expectedSecret)) {
-    throw new Error('Unauthorized: invalid secret');
-  }
+// ─── List Action Handlers ────────────────────────────────────────────
+
+/**
+ * GET — Return all sheet tab names with item counts.
+ * @returns {{ lists: Array<{ id: string, name: string, itemCount: number }> }}
+ */
+function handleGetLists() {
+  const ss = getSpreadsheet();
+  const sheets = ss.getSheets();
+  const lists = sheets.map(function (sheet) {
+    const name = sheet.getName();
+    const lastRow = sheet.getLastRow();
+    const itemCount = Math.max(0, lastRow - 1); // subtract header row
+    return { id: name, name: name, itemCount: itemCount };
+  });
+  return { lists: lists };
 }
 
-function getSheet_(name) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(name);
+/**
+ * POST — Create a new sheet tab with headers.
+ * @param {{ name: string }} params
+ * @returns {{ listId: string }}
+ */
+function handleCreateList(params) {
+  const name = (params.name || '').trim();
+  validateListName(name);
+
+  const ss = getSpreadsheet();
+
+  // Check for duplicate name
+  if (ss.getSheetByName(name)) {
+    throw new Error('רשימה בשם זה כבר קיימת');
+  }
+
+  const sheet = ss.insertSheet(name);
+  // Write header row
+  sheet.getRange(1, 1, 1, NUM_COLS).setValues([HEADERS]);
+
+  return { listId: name };
+}
+
+/**
+ * POST — Rename an existing sheet tab.
+ * @param {{ listId: string, newName: string }} params
+ * @returns {{ listId: string }}
+ */
+function handleRenameList(params) {
+  const listId = params.listId;
+  const newName = (params.newName || '').trim();
+  validateListName(newName);
+
+  const ss = getSpreadsheet();
+
+  // Check for duplicate name
+  if (ss.getSheetByName(newName)) {
+    throw new Error('רשימה בשם זה כבר קיימת');
+  }
+
+  const sheet = getSheetByName(listId);
+  sheet.setName(newName);
+
+  return { listId: newName };
+}
+
+/**
+ * POST — Delete a sheet tab. Prevents deleting the last remaining sheet.
+ * @param {{ listId: string }} params
+ * @returns {{}}
+ */
+function handleDeleteList(params) {
+  const ss = getSpreadsheet();
+
+  // Must keep at least one sheet
+  if (ss.getSheets().length <= 1) {
+    throw new Error('אי אפשר למחוק את הרשימה האחרונה');
+  }
+
+  const sheet = getSheetByName(params.listId);
+  ss.deleteSheet(sheet);
+
+  return {};
+}
+
+/**
+ * POST — Duplicate a sheet tab with regenerated UUIDs.
+ * @param {{ sourceListId: string, newName: string }} params
+ * @returns {{ listId: string }}
+ */
+function handleDuplicateList(params) {
+  const sourceListId = params.sourceListId || params.listId;
+  const newName = (params.newName || '').trim();
+  validateListName(newName);
+
+  const ss = getSpreadsheet();
+
+  // Check for duplicate target name
+  if (ss.getSheetByName(newName)) {
+    throw new Error('רשימה בשם זה כבר קיימת');
+  }
+
+  // Find source sheet
+  const sourceSheet = ss.getSheetByName(sourceListId);
+  if (!sourceSheet) {
+    throw new Error('רשימת המקור לא נמצאה');
+  }
+
+  // Copy the sheet
+  const newSheet = sourceSheet.copyTo(ss);
+  newSheet.setName(newName);
+
+  // Regenerate all rowId UUIDs (column A, rows 2+)
+  const lastRow = newSheet.getLastRow();
+  if (lastRow >= 2) {
+    const numItems = lastRow - 1;
+    const newIds = [];
+    for (var i = 0; i < numItems; i++) {
+      newIds.push([Utilities.getUuid()]);
+    }
+    newSheet.getRange(2, COL.ROW_ID, numItems, 1).setValues(newIds);
+  }
+
+  return { listId: newName };
+}
+
+// ─── Item Action Handlers ────────────────────────────────────────────
+
+/**
+ * GET — Return all items from a sheet.
+ * @param {{ listId: string }} params
+ * @returns {{ items: Object[], version: string }}
+ */
+function handleListItems(params) {
+  const sheet = getSheetByName(params.listId);
+  const items = sheetToItems(sheet);
+  return { items: items, version: getVersion(sheet) };
+}
+
+/**
+ * POST — Add a new item row with a generated UUID.
+ * @param {{ listId: string, name: string, quantity: string, category: string, notes: string, price: number|string, image: string }} params
+ * @returns {{ rowId: string, version: string }}
+ */
+function handleAddItem(params) {
+  const sheet = getSheetByName(params.listId);
+  const rowId = Utilities.getUuid();
+  const now = new Date().toISOString();
+
+  const row = [
+    rowId,
+    params.name || '',
+    params.quantity || '',
+    params.category || '',
+    params.notes || '',
+    'FALSE',
+    now,
+    now,
+    params.price || '',
+    params.image || ''
+  ];
+
+  sheet.appendRow(row);
+
+  return { rowId: rowId, version: getVersion(sheet) };
+}
+
+/**
+ * POST — Update an existing item by rowId.
+ * Updates name, quantity, category, notes, price, image, and updatedAt.
+ * @param {{ rowId: string, name: string, quantity: string, category: string, notes: string, price: number|string, image: string }} params
+ * @returns {{ version: string }}
+ */
+function handleUpdateItem(params) {
+  const result = findRowByRowId(params.rowId);
+  const sheet = result.sheet;
+  const rowIndex = result.rowIndex;
+  const now = new Date().toISOString();
+
+  // Update columns B-E (name, quantity, category, notes)
+  sheet.getRange(rowIndex, COL.NAME).setValue(params.name || '');
+  sheet.getRange(rowIndex, COL.QUANTITY).setValue(params.quantity || '');
+  sheet.getRange(rowIndex, COL.CATEGORY).setValue(params.category || '');
+  sheet.getRange(rowIndex, COL.NOTES).setValue(params.notes || '');
+
+  // Update column H (updatedAt)
+  sheet.getRange(rowIndex, COL.UPDATED_AT).setValue(now);
+
+  // Update columns I-J (price, image)
+  sheet.getRange(rowIndex, COL.PRICE).setValue(params.price || '');
+  sheet.getRange(rowIndex, COL.IMAGE).setValue(params.image || '');
+
+  return { version: getVersion(sheet) };
+}
+
+/**
+ * POST — Toggle the purchased status of an item by rowId.
+ * @param {{ rowId: string, purchased: boolean }} params
+ * @returns {{ version: string }}
+ */
+function handleToggleItem(params) {
+  const result = findRowByRowId(params.rowId);
+  const sheet = result.sheet;
+  const rowIndex = result.rowIndex;
+  const now = new Date().toISOString();
+
+  // Update column F (purchased)
+  const purchased = params.purchased ? 'TRUE' : 'FALSE';
+  sheet.getRange(rowIndex, COL.PURCHASED).setValue(purchased);
+
+  // Update column H (updatedAt)
+  sheet.getRange(rowIndex, COL.UPDATED_AT).setValue(now);
+
+  return { version: getVersion(sheet) };
+}
+
+/**
+ * POST — Delete an item row by rowId.
+ * @param {{ rowId: string }} params
+ * @returns {{ version: string }}
+ */
+function handleDeleteItem(params) {
+  const result = findRowByRowId(params.rowId);
+  const sheet = result.sheet;
+  const rowIndex = result.rowIndex;
+
+  sheet.deleteRow(rowIndex);
+
+  return { version: getVersion(sheet) };
+}
+
+/**
+ * POST — Delete all rows where purchased === TRUE (bottom-to-top).
+ * @param {{ listId: string }} params
+ * @returns {{ deletedCount: number, version: string }}
+ */
+function handleClearCompleted(params) {
+  const sheet = getSheetByName(params.listId);
+  const lastRow = sheet.getLastRow();
+  var deletedCount = 0;
+
+  if (lastRow < 2) {
+    // No data rows
+    return { deletedCount: 0, version: getVersion(sheet) };
+  }
+
+  // Read all purchased values (column F, rows 2 to lastRow)
+  const purchasedRange = sheet.getRange(2, COL.PURCHASED, lastRow - 1, 1);
+  const purchasedValues = purchasedRange.getValues();
+
+  // Iterate from bottom to top to preserve row indices while deleting
+  for (var i = purchasedValues.length - 1; i >= 0; i--) {
+    const val = String(purchasedValues[i][0]).toUpperCase();
+    if (val === 'TRUE') {
+      sheet.deleteRow(i + 2); // +2 because data starts at row 2, array is 0-indexed
+      deletedCount++;
+    }
+  }
+
+  return { deletedCount: deletedCount, version: getVersion(sheet) };
+}
+
+// ─── Version Handler ─────────────────────────────────────────────────
+
+/**
+ * GET — Return the current version string for a sheet.
+ * @param {string} [listId] - Optional sheet name; uses default if omitted.
+ * @returns {{ version: string }}
+ */
+function handleVersion(listId) {
+  const sheet = getSheetByName(listId);
+  return { version: getVersion(sheet) };
+}
+
+// ─── Utility Functions ───────────────────────────────────────────────
+
+/**
+ * Find a sheet by name. Falls back to the default sheet from config.
+ * Throws if the sheet is not found.
+ * @param {string} listId - The sheet name to find.
+ * @returns {GoogleAppsScript.Spreadsheet.Sheet}
+ */
+function getSheetByName(listId) {
+  const ss = getSpreadsheet();
+  const name = (listId && listId.trim()) ? listId.trim() : getConfig().defaultSheet;
+  const sheet = ss.getSheetByName(name);
   if (!sheet) {
-    sheet = ss.insertSheet(name);
-    if (name === 'Lists') {
-      sheet.getRange(1, 1, 1, LISTS_HEADERS.length).setValues([LISTS_HEADERS]);
-      sheet.setFrozenRows(1);
-    } else if (name === 'Items') {
-      sheet.getRange(1, 1, 1, ITEMS_HEADERS.length).setValues([ITEMS_HEADERS]);
-      sheet.setFrozenRows(1);
-    }
+    throw new Error('הרשימה לא נמצאה');
   }
   return sheet;
 }
 
-function getVersion_() {
-  const sheet = getSheet_('Items');
-  return sheet.getLastRow();
-}
+/**
+ * Scan all sheets for a row whose column A matches the given rowId.
+ * Returns the sheet and 1-based row index.
+ * @param {string} rowId - The UUID to search for.
+ * @returns {{ sheet: GoogleAppsScript.Spreadsheet.Sheet, rowIndex: number }}
+ */
+function findRowByRowId(rowId) {
+  if (!rowId) {
+    throw new Error('פריט לא נמצא');
+  }
 
-function listItems_(listId) {
-  const sheet = getSheet_('Items');
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
+  const ss = getSpreadsheet();
+  const sheets = ss.getSheets();
 
-  const values = sheet.getRange(2, 1, lastRow - 1, ITEMS_HEADERS.length).getValues();
-  return values
-    .filter(row => row[0] && (!listId || row[1] == listId))
-    .map(rowToItem_);
-}
+  for (var s = 0; s < sheets.length; s++) {
+    var sheet = sheets[s];
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) continue;
 
-function rowToItem_(row) {
-  return {
-    rowId: String(row[0] || ''),
-    listId: String(row[1] || ''),
-    name: String(row[2] || ''),
-    quantity: String(row[3] || ''),
-    category: String(row[4] || ''),
-    notes: String(row[5] || ''),
-    price: String(row[6] || ''),
-    image: String(row[7] || ''),
-    purchased: String(row[8] || 'false'),
-    createdAt: String(row[9] || ''),
-    updatedAt: String(row[10] || '')
-  };
-}
-
-function addItem_(payload) {
-  const name = requireField_(payload.name, 'name');
-  const quantity = requireField_(payload.quantity, 'quantity');
-  const now = new Date().toISOString();
-  const rowId = Utilities.getUuid();
-
-  const row = [
-    rowId,
-    payload.listId || 1,
-    name,
-    quantity,
-    String(payload.category || ''),
-    String(payload.notes || ''),
-    String(payload.price || ''),
-    String(payload.image || ''),
-    'false',
-    now,
-    now
-  ];
-
-  const sheet = getSheet_('Items');
-  sheet.appendRow(row);
-  return { rowId };
-}
-
-function updateItem_(payload) {
-  const rowIndex = findRowIndexById_(requireField_(payload.rowId, 'rowId'));
-  const sheet = getSheet_('Items');
-  const current = sheet.getRange(rowIndex, 1, 1, ITEMS_HEADERS.length).getValues()[0];
-  const updatedRow = [
-    current[0],
-    current[1],
-    requireField_(payload.name, 'name'),
-    requireField_(payload.quantity, 'quantity'),
-    String(payload.category || ''),
-    String(payload.notes || ''),
-    String(payload.price || ''),
-    String(payload.image || ''),
-    current[8],
-    current[9],
-    new Date().toISOString()
-  ];
-  sheet.getRange(rowIndex, 1, 1, ITEMS_HEADERS.length).setValues([updatedRow]);
-  return { rowId: current[0] };
-}
-
-function toggleItem_(payload) {
-  const rowIndex = findRowIndexById_(requireField_(payload.rowId, 'rowId'));
-  const sheet = getSheet_('Items');
-  sheet.getRange(rowIndex, 9).setValue(String(payload.purchased) === 'true' ? 'true' : 'false');
-  sheet.getRange(rowIndex, 11).setValue(new Date().toISOString());
-  return { rowId: payload.rowId };
-}
-
-function deleteItem_(payload) {
-  const rowIndex = findRowIndexById_(requireField_(payload.rowId, 'rowId'));
-  getSheet_('Items').deleteRow(rowIndex);
-  return { rowId: payload.rowId };
-}
-
-function findRowIndexById_(rowId) {
-  const sheet = getSheet_('Items');
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) throw new Error('Row not found');
-
-  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
-  const offset = ids.findIndex(id => String(id) === String(rowId));
-  if (offset === -1) throw new Error(`Row not found for id ${rowId}`);
-  return offset + 2;
-}
-
-function getLists_() {
-  const sheet = getSheet_('Lists');
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-
-  const values = sheet.getRange(2, 1, lastRow - 1, LISTS_HEADERS.length).getValues();
-  return values
-    .filter(row => row[0])
-    .map(row => ({
-      id: String(row[0] || ''),
-      name: String(row[1] || ''),
-      createdAt: String(row[2] || '')
-    }));
-}
-
-function createList_(payload) {
-  const name = requireField_(payload.name, 'name');
-  const now = new Date().toISOString();
-  const id = getSheet_('Lists').getLastRow(); // simple id
-
-  const row = [id, name, now];
-  const sheet = getSheet_('Lists');
-  sheet.appendRow(row);
-  return { id };
-}
-
-function updateList_(payload) {
-  const sheet = getSheet_('Lists');
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == payload.id) {
-      sheet.getRange(i + 1, 2).setValue(payload.name);
-      break;
+    var ids = sheet.getRange(2, COL.ROW_ID, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (ids[i][0] === rowId) {
+        return { sheet: sheet, rowIndex: i + 2 }; // +2: header row + 0-index
+      }
     }
   }
-  return {};
+
+  throw new Error('פריט לא נמצא');
 }
 
-function deleteList_(payload) {
-  const sheet = getSheet_('Lists');
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == payload.id) {
-      sheet.deleteRow(i + 1);
-      break;
-    }
+/**
+ * Generate a version string based on the sheet's row count and current time.
+ * This changes on any write, triggering client-side sync.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @returns {string}
+ */
+function getVersion(sheet) {
+  return String(sheet.getLastRow()) + '-' + new Date().getTime();
+}
+
+/**
+ * Convert all data rows in a sheet to an array of item objects.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @returns {Object[]}
+ */
+function sheetToItems(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return [];
   }
-  // Delete items in that list
-  const itemsSheet = getSheet_('Items');
-  const itemsData = itemsSheet.getDataRange().getValues();
-  for (let i = itemsData.length - 1; i > 0; i--) {
-    if (itemsData[i][1] == payload.id) {
-      itemsSheet.deleteRow(i + 1);
-    }
+
+  const data = sheet.getRange(2, 1, lastRow - 1, NUM_COLS).getValues();
+  return data.map(function (row) {
+    return {
+      rowId:     row[0],
+      name:      row[1],
+      quantity:  row[2],
+      category:  row[3],
+      notes:     row[4],
+      purchased: String(row[5]).toUpperCase() === 'TRUE',
+      createdAt: row[6],
+      updatedAt: row[7],
+      price:     row[8],
+      image:     row[9]
+    };
+  });
+}
+
+/**
+ * Validate a list (sheet) name.
+ * - Must not be empty or whitespace-only
+ * - Must not exceed 100 characters
+ * - Must not contain forbidden characters: [ ] * ? / \
+ * @param {string} name
+ */
+function validateListName(name) {
+  if (!name || !name.trim()) {
+    throw new Error('שם רשימה לא יכול להיות ריק');
   }
-  return {};
-}
-
-function requireField_(value, fieldName) {
-  const normalized = String(value || '').trim();
-  if (!normalized) throw new Error(`Missing required field: ${fieldName}`);
-  return normalized;
-}
-
-function jsonOutput_(data) {
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
+  if (name.length > 100) {
+    throw new Error('שם רשימה לא יכול לעלות על 100 תווים');
+  }
+  if (FORBIDDEN_NAME_CHARS.test(name)) {
+    throw new Error('שם רשימה מכיל תווים לא חוקיים');
+  }
 }

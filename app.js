@@ -77,8 +77,28 @@ const els = {
   listActionDelete: document.getElementById('listActionDelete'),
   listActionsClose: document.getElementById('listActionsClose'),
   // Categories tab elements
-  categoriesList: document.getElementById('categoriesList')
+  categoriesList: document.getElementById('categoriesList'),
+  // Filter toggle & collapse
+  filterToggleBtn: document.getElementById('filterToggleBtn'),
+  filtersCollapse: document.getElementById('filtersCollapse'),
+  // Quick-add carousel
+  quickAddSection: document.getElementById('quickAddSection'),
+  quickAddCarousel: document.getElementById('quickAddCarousel'),
+  quickAddTitle: document.getElementById('quickAddTitle'),
+  quickAddModePersonal: document.getElementById('quickAddModePersonal'),
+  quickAddModeCommon: document.getElementById('quickAddModeCommon')
 };
+
+// Quick-add mode: 'personal' | 'common'
+let quickAddMode = 'personal';
+
+// ─── Optimistic-UI / debounce helpers ────────────────────────────────
+/** Guard to prevent overlapping background silentRefresh() calls */
+let isSyncing = false;
+/** Per-item debounce timer IDs for quantity stepper  Map<rowId, timerId> */
+const qtyDebounceTimers = new Map();
+/** Per-item original quantity before the current debounce sequence started  Map<rowId, qty> */
+const qtyOriginalValues = new Map();
 
 function showLoading() {
   const overlay = document.getElementById('loadingOverlay');
@@ -282,6 +302,176 @@ function getVisibleItems() {
     return matchesSearch && matchesStatus;
   });
 }
+// ─── Filter Toggle (Collapsible) ──────────────────────────────────────
+
+function initFilterToggle() {
+  if (!els.filterToggleBtn || !els.filtersCollapse) return;
+  els.filterToggleBtn.addEventListener('click', () => {
+    const isOpen = els.filtersCollapse.classList.toggle('open');
+    els.filterToggleBtn.setAttribute('aria-expanded', String(isOpen));
+    els.filtersCollapse.setAttribute('aria-hidden', String(!isOpen));
+  });
+}
+
+// ─── Quick-Add Carousel ────────────────────────────────────────────────
+
+/**
+ * Hard-coded fallback grocery list (common Israeli supermarket items).
+ * Shown in the carousel only when state.items is empty.
+ */
+const COMMON_GROCERY_ITEMS = [
+  // ירקות ופירות
+  { name: 'עגבניה',     category: 'ירקות ופירות' },
+  { name: 'מלפפון',     category: 'ירקות ופירות' },
+  { name: 'בצל',        category: 'ירקות ופירות' },
+  { name: 'גזר',        category: 'ירקות ופירות' },
+  { name: 'תפוח',       category: 'ירקות ופירות' },
+  { name: 'בננה',       category: 'ירקות ופירות' },
+  { name: 'לימון',      category: 'ירקות ופירות' },
+  { name: 'פלפל',       category: 'ירקות ופירות' },
+  { name: 'חסה',        category: 'ירקות ופירות' },
+  { name: 'שום',        category: 'ירקות ופירות' },
+  // מוצרי חלב
+  { name: 'חלב',        category: 'מוצרי חלב' },
+  { name: 'גבינה לבנה', category: 'מוצרי חלב' },
+  { name: 'גבינה צהובה',category: 'מוצרי חלב' },
+  { name: 'יוגורט',     category: 'מוצרי חלב' },
+  { name: 'חמאה',       category: 'מוצרי חלב' },
+  { name: 'שמנת',       category: 'מוצרי חלב' },
+  { name: 'ביצים',      category: 'מוצרי חלב' },
+  // לחם ומאפים
+  { name: 'לחם',        category: 'לחם ומאפים' },
+  { name: 'פיתה',       category: 'לחם ומאפים' },
+  { name: 'חלה',        category: 'לחם ומאפים' },
+  // בשר ודגים
+  { name: 'עוף',        category: 'בשר ודגים' },
+  { name: 'בשר טחון',   category: 'בשר ודגים' },
+  { name: 'סלמון',      category: 'בשר ודגים' },
+  // מזון יבש
+  { name: 'אורז',       category: 'מזון יבש' },
+  { name: 'פסטה',       category: 'מזון יבש' },
+  { name: 'קמח',        category: 'מזון יבש' },
+  { name: 'סוכר',       category: 'מזון יבש' },
+  { name: 'שמן זית',    category: 'מזון יבש' },
+  { name: 'רוטב עגבניות',category: 'מזון יבש' },
+  // משקאות
+  { name: 'מים מינרליים',category: 'משקאות' },
+  { name: 'מיץ תפוזים', category: 'משקאות' },
+  { name: 'קפה',        category: 'משקאות' },
+  // ניקיון
+  { name: 'סבון כלים',  category: 'ניקיון' },
+  { name: 'נייר טואלט', category: 'ניקיון' },
+  { name: 'שקיות אשפה', category: 'ניקיון' }
+];
+
+/**
+ * Build frequency map of item names from state.items.
+ * Items that have been purchased (bought) at least once rank higher.
+ * Returns array sorted by frequency desc, then alpha.
+ */
+function getQuickAddItems() {
+  const freq = {};
+  state.items.forEach(item => {
+    const key = item.name.trim();
+    if (!key) return;
+    if (!freq[key]) freq[key] = { name: key, count: 0, category: item.category || '' };
+    freq[key].count += 1;
+    if (item.purchased) freq[key].count += 1; // boost purchased items
+  });
+  return Object.values(freq)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'he'))
+    .slice(0, 20);
+}
+
+function renderQuickAddCarousel() {
+  if (!els.quickAddSection || !els.quickAddCarousel) return;
+
+  // Determine effective mode: default to 'common' if no personal items yet
+  if (quickAddMode === 'personal' && !state.items.length) {
+    quickAddMode = 'common';
+  }
+
+  const isCommon = quickAddMode === 'common';
+  const items = isCommon ? COMMON_GROCERY_ITEMS : getQuickAddItems();
+
+  if (!items.length) {
+    els.quickAddSection.hidden = true;
+    return;
+  }
+  els.quickAddSection.hidden = false;
+
+  // Update toggle button active states
+  if (els.quickAddModePersonal && els.quickAddModeCommon) {
+    els.quickAddModePersonal.classList.toggle('active', !isCommon);
+    els.quickAddModeCommon.classList.toggle('active', isCommon);
+  }
+
+  // Update section title if element exists
+  if (els.quickAddTitle) {
+    els.quickAddTitle.textContent = isCommon ? 'נפוצים' : 'הרגלי';
+  }
+
+  els.quickAddCarousel.innerHTML = '';
+  items.forEach(({ name, category }) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = isCommon ? 'quick-add-chip fallback' : 'quick-add-chip';
+    chip.setAttribute('role', 'listitem');
+    chip.setAttribute('title', `הוסף: ${name}`);
+    chip.innerHTML = `<span class="quick-add-chip-name">${escapeHtml(name)}</span>${category ? `<span class="quick-add-chip-cat">${escapeHtml(category)}</span>` : ''}`;
+    chip.addEventListener('click', () => quickAddItem(name, category));
+    els.quickAddCarousel.appendChild(chip);
+  });
+}
+
+async function quickAddItem(name, category) {
+  if (!state.currentListId) return;
+
+  // ── Optimistic add: appear instantly ──────────────────────────────
+  const tempId = 'temp-' + Date.now();
+  const tempItem = normalizeItem({
+    rowId: tempId,
+    name,
+    quantity: '1',
+    category: category || '',
+    notes: '',
+    price: '',
+    image: '',
+    purchased: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  state.items = [tempItem, ...state.items];
+  renderItems();
+  renderQuickAddCarousel();
+  showMessage(`"${name}" נוסף לרשימה.`);
+  setSyncChip('מוסיף...', 'disconnected');
+
+  // ── Background API call ───────────────────────────────────────────
+  const payload = {
+    listId: state.currentListId,
+    name,
+    quantity: '1',
+    category: category || '',
+    notes: '',
+    price: '',
+    image: ''
+  };
+  try {
+    await callApi('add', payload);
+    setSyncChip('נשמר', 'connected');
+    // Background sync to replace temp rowId with the real server rowId
+    silentRefresh();
+  } catch (error) {
+    // Rollback: remove the temp item and show error
+    state.items = state.items.filter(i => i.rowId !== tempId);
+    renderItems();
+    renderQuickAddCarousel();
+    showMessage(error.message, true);
+    setSyncChip('שגיאת סנכרון', 'disconnected');
+  }
+}
+
 function renderItems() {
   const items = getVisibleItems();
   els.itemsList.innerHTML = '';
@@ -298,8 +488,13 @@ function renderItems() {
     const checkbox = node.querySelector('.toggle-item');
     checkbox.checked = item.purchased;
     checkbox.addEventListener('change', () => toggleItem(item.rowId, checkbox.checked));
-    node.querySelector('.item-name').textContent = item.name;
-    node.querySelector('.item-quantity').textContent = `כמות: ${item.quantity || '-'}`;
+
+    // Item name — click opens edit modal
+    const nameEl = node.querySelector('.item-name');
+    nameEl.textContent = item.name;
+    nameEl.style.cursor = 'pointer';
+    nameEl.addEventListener('click', () => openEditDialog(item));
+
     const priceEl = node.querySelector('.item-price');
     if (item.price) {
       priceEl.textContent = `₪${item.price}`;
@@ -319,8 +514,47 @@ function renderItems() {
     const categoryEl = node.querySelector('.item-category');
     if (item.category) categoryEl.textContent = item.category; else categoryEl.remove();
     node.querySelector('.item-date').textContent = item.updatedAt ? `עודכן: ${formatDate(item.updatedAt)}` : '';
-    node.querySelector('.edit-btn').addEventListener('click', () => openEditDialog(item));
     node.querySelector('.delete-btn').addEventListener('click', () => deleteItem(item.rowId));
+
+    // Inline quantity stepper
+    const stepperSection = node.querySelector('.item-stepper');
+    const stepperQty = node.querySelector('.stepper-qty');
+    const decBtn = node.querySelector('.stepper-dec');
+    const incBtn = node.querySelector('.stepper-inc');
+
+    // Parse numeric quantity or show raw string
+    const rawQty = item.quantity || '1';
+    const numQty = parseFloat(rawQty);
+    const isNumeric = !isNaN(numQty);
+    stepperQty.textContent = isNumeric ? String(numQty) : rawQty;
+
+    if (item.purchased) {
+      // Greyed out for done items
+      stepperSection.classList.add('stepper-done');
+      decBtn.disabled = true;
+      incBtn.disabled = true;
+    } else {
+      incBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const current = parseFloat(stepperQty.textContent);
+        const newQty = isNaN(current) ? 2 : current + 1;
+        stepperQty.textContent = String(newQty);
+        await updateItemQuantity(item.rowId, String(newQty));
+      });
+      decBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const current = parseFloat(stepperQty.textContent);
+        const newQty = isNaN(current) ? 0 : current - 1;
+        if (newQty <= 0) {
+          const confirmed = await showConfirmDialog('הסרת פריט', `להסיר את "${item.name}" מהרשימה?`);
+          if (confirmed) await deleteItem(item.rowId);
+        } else {
+          stepperQty.textContent = String(newQty);
+          await updateItemQuantity(item.rowId, String(newQty));
+        }
+      });
+    }
+
     els.itemsList.appendChild(node);
   }
   const doneCount = state.items.filter(item => item.purchased).length;
@@ -347,6 +581,53 @@ function formatTimeOnly(value) {
   const date = new Date(value); if (Number.isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat('he-IL',{timeStyle:'short'}).format(date);
 }
+async function updateItemQuantity(rowId, newQty) {
+  const item = state.items.find(i => i.rowId === rowId);
+  if (!item) return;
+
+  // Record the pre-sequence original quantity only on the first tap
+  if (!qtyDebounceTimers.has(rowId)) {
+    qtyOriginalValues.set(rowId, item.quantity);
+  }
+
+  // Optimistic update: reflect change immediately in UI
+  optimisticSet(rowId, { quantity: newQty });
+
+  // Debounce: cancel any pending API call for this item and restart timer
+  clearTimeout(qtyDebounceTimers.get(rowId));
+
+  const timer = setTimeout(async () => {
+    qtyDebounceTimers.delete(rowId);
+    const originalQty = qtyOriginalValues.get(rowId);
+    qtyOriginalValues.delete(rowId);
+
+    const currentItem = state.items.find(i => i.rowId === rowId);
+    if (!currentItem) return;
+
+    try {
+      setSyncChip('שומר...', 'disconnected');
+      const patch = {
+        rowId,
+        name: currentItem.name,
+        quantity: currentItem.quantity,
+        category: currentItem.category,
+        notes: currentItem.notes,
+        price: currentItem.price,
+        image: currentItem.image
+      };
+      const data = await callApi('update', patch);
+      if (data.version) state.remoteVersion = data.version;
+      setSyncChip('נשמר', 'connected');
+    } catch (error) {
+      // Rollback to value before the entire debounce sequence
+      optimisticSet(rowId, { quantity: originalQty });
+      showMessage(error.message, true);
+    }
+  }, 600);
+
+  qtyDebounceTimers.set(rowId, timer);
+}
+
 async function loadItems(showSuccess = false, {silent=false} = {}) {
   // Bug 1 fix: only show spinner for non-silent (user-initiated) loads
   if (!silent) {
@@ -372,6 +653,7 @@ async function loadItems(showSuccess = false, {silent=false} = {}) {
     state.remoteVersion = data.version || state.remoteVersion;
     state.lastLoadedAt = new Date().toISOString();
     renderItems();
+    renderQuickAddCarousel();
     // Re-render categories if that tab is active
     if (state.activeTab === 'categories') renderCategories();
     hideMessage();
@@ -412,30 +694,79 @@ function optimisticSet(rowId, patch) {
   state.items = state.items.map(item => item.rowId === rowId ? {...item, ...patch, updatedAt:new Date().toISOString()} : item);
   renderItems();
 }
+
+/**
+ * silentRefresh — reconcile state.items with server without showing any
+ * loading spinner or blocking the UI.  Guarded by `isSyncing` so
+ * overlapping background refreshes cannot pile up.
+ */
+async function silentRefresh() {
+  if (isSyncing) return;
+  isSyncing = true;
+  try {
+    await loadItems(false, { silent: true });
+  } finally {
+    isSyncing = false;
+  }
+}
+
 async function addItem(event) {
   event.preventDefault();
   const form = new FormData(els.addItemForm);
-  const payload = {
-    listId: state.currentListId,
-    name: form.get('name'),
-    quantity: form.get('quantity'),
-    category: form.get('category'),
-    notes: form.get('notes'),
-    price: form.get('price'),
-    image: form.get('image')
-  };
+  const name     = form.get('name')     || '';
+  const quantity = form.get('quantity') || '1';
+  const category = form.get('category') || '';
+  const notes    = form.get('notes')    || '';
+  const price    = form.get('price')    || '';
+  const image    = form.get('image')    || '';
+
+  // ── Optimistic add: appear instantly ──────────────────────────────
+  const tempId = 'temp-' + Date.now();
+  const tempItem = normalizeItem({
+    rowId: tempId,
+    name,
+    quantity,
+    category,
+    notes,
+    price,
+    image,
+    purchased: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  state.items = [tempItem, ...state.items];
+  renderItems();
+  renderQuickAddCarousel();
+  els.addItemForm.reset();
+  showMessage('הפריט נוסף לרשימה.');
+  setSyncChip('מוסיף...', 'disconnected');
+
   const submitBtn = els.addItemForm.querySelector('button[type="submit"]');
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'שומר...'; }
-  showLoading();
+
+  // ── Background API call ───────────────────────────────────────────
+  const payload = {
+    listId: state.currentListId,
+    name,
+    quantity,
+    category,
+    notes,
+    price,
+    image
+  };
   try {
-    setSyncChip('מוסיף...', 'disconnected');
     await callApi('add', payload);
-    els.addItemForm.reset();
-    await loadItems();
-    showMessage('הפריט נוסף לרשימה.');
-  } catch (error) { showMessage(error.message, true); }
-  finally {
-    hideLoading();
+    setSyncChip('נשמר', 'connected');
+    // Background sync to swap temp rowId for the real server rowId
+    silentRefresh();
+  } catch (error) {
+    // Rollback: remove the temp item
+    state.items = state.items.filter(i => i.rowId !== tempId);
+    renderItems();
+    renderQuickAddCarousel();
+    showMessage(error.message, true);
+    setSyncChip('שגיאת סנכרון', 'disconnected');
+  } finally {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'הוסף לרשימה'; }
   }
 }
@@ -823,6 +1154,21 @@ async function fetchProductData(name) {
 
 // ─── Event Binding ───────────────────────────────────────────────────
 
+function initQuickAddToggle() {
+  if (els.quickAddModePersonal) {
+    els.quickAddModePersonal.addEventListener('click', () => {
+      quickAddMode = 'personal';
+      renderQuickAddCarousel();
+    });
+  }
+  if (els.quickAddModeCommon) {
+    els.quickAddModeCommon.addEventListener('click', () => {
+      quickAddMode = 'common';
+      renderQuickAddCarousel();
+    });
+  }
+}
+
 function bindEvents() {
   els.toggleSecretBtn.addEventListener('click', () => { els.sharedSecret.type = els.sharedSecret.type === 'password' ? 'text' : 'password'; });
   els.saveSettingsBtn.addEventListener('click', () => {
@@ -923,6 +1269,8 @@ function bindEvents() {
 function boot() {
   hydrateSettings();
   bindEvents();
+  initFilterToggle();
+  initQuickAddToggle();
   // Bug 5 fix: explicitly activate the Items/list tab on startup
   switchTab('list');
   setAutoRefresh(getConfig().autoRefresh || '5');
@@ -935,6 +1283,8 @@ function boot() {
   } else {
     els.loading.classList.add('hidden');
     showMessage('הכנס URL של Apps Script ולחץ על בדיקת חיבור כדי להתחיל.');
+    // Show fallback carousel for new/unconfigured users
+    renderQuickAddCarousel();
   }
 }
 
@@ -949,7 +1299,7 @@ if ('serviceWorker' in navigator) {
   
   // Then register the new one
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js?v=5')
+    navigator.serviceWorker.register('/sw.js?v=6')
       .then(registration => {
         console.log('Service Worker registered successfully:', registration.scope);
       })

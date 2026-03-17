@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#2563eb" />
+  <meta name="theme-color" content="#009de0" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="רשימת קניות" />
@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=6" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
@@ -74,23 +74,37 @@
           <div class="inline-statuses">
             <span class="status-chip" id="connectionChip">לא מחובר</span>
             <span class="status-chip disconnected" id="syncChip" aria-live="polite">ממתין</span>
+            <button id="filterToggleBtn" class="filter-toggle-btn" aria-label="הצג/הסתר סינון" aria-expanded="false" title="סינון וחיפוש">
+              <span class="filter-toggle-icon">🔍</span>
+              <span class="filter-toggle-label">סינון</span>
+            </button>
           </div>
         </div>
 
-        <div class="filters-inline">
-          <input id="searchInput" type="search" placeholder="חיפוש..." />
-          <select id="statusFilter">
-            <option value="all">הכול</option>
-            <option value="active">פעיל</option>
-            <option value="done">קנה</option>
-          </select>
-          <select id="sortSelect">
-            <option value="created_desc">חדש</option>
-            <option value="created_asc">ישן</option>
-            <option value="name_asc">שם</option>
-            <option value="category_asc">קטגוריה</option>
-          </select>
+        <div id="filtersCollapse" class="filters-collapse" aria-hidden="true">
+          <div class="filters-inline">
+            <input id="searchInput" type="search" placeholder="חיפוש..." />
+            <select id="statusFilter">
+              <option value="all">הכול</option>
+              <option value="active">פעיל</option>
+              <option value="done">קנה</option>
+            </select>
+            <select id="sortSelect">
+              <option value="created_desc">חדש</option>
+              <option value="created_asc">ישן</option>
+              <option value="name_asc">שם</option>
+              <option value="category_asc">קטגוריה</option>
+            </select>
+          </div>
         </div>
+      </section>
+
+      <section class="quick-add-section" id="quickAddSection" hidden>
+        <div class="quick-add-mode-toggle">
+          <button id="quickAddModePersonal" class="qa-mode-btn" type="button">הרגלי</button>
+          <button id="quickAddModeCommon" class="qa-mode-btn" type="button">נפוצים</button>
+        </div>
+        <div id="quickAddCarousel" class="quick-add-carousel" role="list" aria-label="הוסף פריט מהיר"></div>
       </section>
 
       <section class="card glass list-card">
@@ -265,7 +279,6 @@
               <span class="item-category"></span>
             </div>
             <div class="item-meta-row">
-              <span class="item-quantity meta-pill"></span>
               <span class="item-price meta-pill"></span>
               <span class="item-date meta-pill subtle"></span>
             </div>
@@ -273,8 +286,12 @@
           </div>
         </div>
       </div>
+      <div class="item-stepper">
+        <button class="stepper-btn stepper-dec" type="button" aria-label="הפחת כמות">−</button>
+        <span class="stepper-qty"></span>
+        <button class="stepper-btn stepper-inc" type="button" aria-label="הגדל כמות">+</button>
+      </div>
       <div class="item-actions">
-        <button class="ghost small-btn edit-btn" type="button" title="ערוך">✎</button>
         <button class="danger small-btn delete-btn" type="button" title="מחק">🗑</button>
       </div>
     </li>
@@ -376,6 +393,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
