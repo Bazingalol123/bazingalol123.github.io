@@ -236,13 +236,32 @@ async function handleResponse(response) {
   if (!response.ok || data.ok === false) throw new Error(data.error || `Request failed with status ${response.status}`);
   return data;
 }
+function isUUID(value) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+function isBooleanString(value) {
+  const v = String(value).trim().toLowerCase();
+  return v === 'true' || v === 'false';
+}
 function normalizeItem(item) {
+  const purchased = String(item.purchased).toLowerCase() === 'true';
+  // Guard against UUID or boolean values leaking into text fields (Bug 2, Bug 3)
+  const safeStr = (val) => {
+    const s = val || '';
+    if (isUUID(s) || isBooleanString(s)) return '';
+    return s;
+  };
   return {
-    rowId: String(item.rowId), name: item.name || '', quantity: item.quantity || '',
-    category: item.category || '', notes: item.notes || '', price: item.price || '',
+    rowId: String(item.rowId),
+    name: item.name || '',
+    quantity: safeStr(item.quantity),
+    category: safeStr(item.category),
+    notes: safeStr(item.notes),
+    price: item.price || '',
     image: item.image || '',
-    purchased: String(item.purchased).toLowerCase() === 'true',
-    createdAt: item.createdAt || '', updatedAt: item.updatedAt || ''
+    purchased,
+    createdAt: item.createdAt || '',
+    updatedAt: item.updatedAt || ''
   };
 }
 function sortItems(items) {
@@ -329,11 +348,27 @@ function formatTimeOnly(value) {
   return new Intl.DateTimeFormat('he-IL',{timeStyle:'short'}).format(date);
 }
 async function loadItems(showSuccess = false, {silent=false} = {}) {
-  if (!silent) els.loading.classList.remove('hidden');
-  showLoading();
+  // Bug 1 fix: only show spinner for non-silent (user-initiated) loads
+  if (!silent) {
+    els.loading.classList.remove('hidden');
+    showLoading();
+  }
   try {
     const data = await callApi('list', { listId: state.currentListId }, 'GET');
-    state.items = (data.items || []).map(normalizeItem);
+    const newItems = (data.items || []).map(normalizeItem);
+    if (silent) {
+      // Bug 4 fix: preserve local purchased state across background refreshes
+      state.items = newItems.map(newItem => {
+        const localItem = state.items.find(i => i.rowId === newItem.rowId);
+        if (localItem && localItem.purchased !== newItem.purchased) {
+          // Keep local checked state to avoid resetting user interaction
+          return { ...newItem, purchased: localItem.purchased };
+        }
+        return newItem;
+      });
+    } else {
+      state.items = newItems;
+    }
     state.remoteVersion = data.version || state.remoteVersion;
     state.lastLoadedAt = new Date().toISOString();
     renderItems();
@@ -348,8 +383,11 @@ async function loadItems(showSuccess = false, {silent=false} = {}) {
     setSyncChip('שגיאת סנכרון', 'disconnected');
     showMessage(error.message, true);
   } finally {
-    els.loading.classList.add('hidden');
-    hideLoading();
+    // Bug 1 fix: only hide the visible spinner elements when not in silent mode
+    if (!silent) {
+      els.loading.classList.add('hidden');
+      hideLoading();
+    }
   }
 }
 async function checkVersionAndSync() {
@@ -883,12 +921,20 @@ function bindEvents() {
   });
 }
 function boot() {
-  hydrateSettings(); bindEvents(); switchTab('list'); setAutoRefresh(getConfig().autoRefresh || '5');
+  hydrateSettings();
+  bindEvents();
+  // Bug 5 fix: explicitly activate the Items/list tab on startup
+  switchTab('list');
+  setAutoRefresh(getConfig().autoRefresh || '5');
   if (getConfig().apiUrl) {
-    loadLists().then(() => loadItems());
-  } else { 
-    els.loading.classList.add('hidden'); 
-    showMessage('הכנס URL של Apps Script ולחץ על בדיקת חיבור כדי להתחיל.'); 
+    loadLists().then(() => {
+      // Ensure we're on the list tab after loading, then load items
+      switchTab('list');
+      return loadItems();
+    });
+  } else {
+    els.loading.classList.add('hidden');
+    showMessage('הכנס URL של Apps Script ולחץ על בדיקת חיבור כדי להתחיל.');
   }
 }
 
