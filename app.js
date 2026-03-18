@@ -638,15 +638,15 @@ async function loadItems(showSuccess = false, {silent=false} = {}) {
     const data = await callApi('list', { listId: state.currentListId }, 'GET');
     const newItems = (data.items || []).map(normalizeItem);
     if (silent) {
-      // Bug 4 fix: preserve local purchased state across background refreshes
-      state.items = newItems.map(newItem => {
-        const localItem = state.items.find(i => i.rowId === newItem.rowId);
-        if (localItem && localItem.purchased !== newItem.purchased) {
-          // Keep local checked state to avoid resetting user interaction
-          return { ...newItem, purchased: localItem.purchased };
-        }
-        return newItem;
-      });
+      // Always trust server state on background refresh.
+      // The previous "preserve local purchased" logic was the root cause of the
+      // cross-device sync bug: when Device A marks an item purchased and
+      // Device B's poller fetches the updated list, the merge was discarding
+      // the remote purchased=true and keeping the local purchased=false,
+      // so the checkmark never appeared on Device B.
+      // toggleItem() already awaits the API before silentRefresh() is called,
+      // so there is no in-flight optimistic state that needs protection here.
+      state.items = newItems;
     } else {
       state.items = newItems;
     }
