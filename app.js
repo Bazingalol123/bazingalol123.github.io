@@ -843,8 +843,23 @@ function setAutoRefresh(seconds) {
   state.syncTimer = null;
   const sec = Number(seconds);
   if (!sec || sec <= 0) { setSyncChip('בדיקת שינוי כבויה', 'disconnected'); return; }
-  setSyncChip(`בדיקה כל ${sec}ש׳`, 'connected');
-  state.syncTimer = setInterval(checkVersionAndSync, sec * 1000);
+  adaptPollingRate();
+}
+/**
+ * adaptPollingRate — set (or reset) the polling interval based on current
+ * page-visibility state.  Call this whenever visibility changes.
+ * Visible  → poll every 3 s  (fast, user is actively looking at the app)
+ * Hidden   → poll every 30 s (slow, tab is backgrounded / screen off)
+ * No-ops silently when auto-refresh is disabled (stored value ≤ 0).
+ */
+function adaptPollingRate() {
+  if (state.syncTimer) clearInterval(state.syncTimer);
+  state.syncTimer = null;
+  const sec = Number(getConfig().autoRefresh);
+  if (!sec || sec <= 0) return;
+  const rate = document.visibilityState === 'visible' ? 3000 : 30000;
+  setSyncChip(`בדיקה כל ${rate / 1000}ש׳`, 'connected');
+  state.syncTimer = setInterval(checkVersionAndSync, rate);
 }
 function switchTab(tab) {
   if (!tab) return;
@@ -1205,7 +1220,16 @@ function bindEvents() {
     if (tab) switchTab(tab);
   }));
 
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersionAndSync(); });
+  // Visibility API: instant refresh + adaptive polling rate
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      silentRefresh();      // immediate sync when tab becomes visible
+    }
+    adaptPollingRate();     // switch between 3 s (visible) and 30 s (hidden)
+  });
+  window.addEventListener('focus', () => {
+    silentRefresh();        // also sync instantly when the window regains focus
+  });
 
   // Side menu events
   els.hamburgerBtn.addEventListener('click', toggleSidemenu);
