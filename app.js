@@ -1364,9 +1364,10 @@ function initOneSignal() {
       promptOptions: {
         slidedown: { enabled: false }
       },
-      serviceWorkerParam: { scope: './' },
-      // Use the existing sw.js which already imports OneSignal's SW
-      serviceWorkerPath: 'sw.js'
+      // Point to OneSignalSDKWorker.js in the same directory as the app.
+      // This file must exist at /reshima/OneSignalSDKWorker.js on GitHub Pages.
+      serviceWorkerPath: 'OneSignalSDKWorker.js',
+      serviceWorkerParam: { scope: '/reshima/' }
     });
 
     updatePushButtonState();
