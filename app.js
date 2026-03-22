@@ -1364,9 +1364,11 @@ function initOneSignal() {
       promptOptions: {
         slidedown: { enabled: false }
       },
-      // Absolute path required so OneSignal fetches from /reshima/ not from root.
-      // OneSignalSDKWorker.js must exist at https://bazingalol123.github.io/reshima/OneSignalSDKWorker.js
-      serviceWorkerPath: '/reshima/OneSignalSDKWorker.js',
+      // Use a relative path so the browser resolves it relative to the current
+      // page origin (/reshima/), yielding /reshima/OneSignalSDKWorker.js.
+      // An absolute path like '/reshima/OneSignalSDKWorker.js' is resolved from
+      // the domain root and breaks on GitHub Pages subpath deployments.
+      serviceWorkerPath: 'OneSignalSDKWorker.js',
       serviceWorkerParam: { scope: '/reshima/' }
     });
 
