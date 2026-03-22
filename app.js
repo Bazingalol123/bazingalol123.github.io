@@ -100,6 +100,13 @@ const qtyDebounceTimers = new Map();
 /** Per-item original quantity before the current debounce sequence started  Map<rowId, qty> */
 const qtyOriginalValues = new Map();
 
+// ─── FCM Push Notifications ──────────────────────────────────────────────────
+// IMPORTANT: Replace with your VAPID public key from:
+// Firebase Console → Project Settings → Cloud Messaging → Web Push certificates → Generate key pair
+// The public key is safe to include in client-side code.
+const FCM_VAPID_PUBLIC_KEY = 'BOGhvyUzGgeKDg4AtHwFJNprIYTCV7p10rQiqUM5ohwYAhmjCNB-UIMGpgYUlfGsJWMgYTXrHWhTxk2Xr6y8aXQ';
+// ─────────────────────────────────────────────────────────────────────────────
+
 function showLoading() {
   const overlay = document.getElementById('loadingOverlay');
   if (overlay) overlay.hidden = false;
@@ -1334,3 +1341,111 @@ if ('serviceWorker' in navigator) {
 }
 
 boot();
+
+// ─── Push Notification Helpers ───────────────────────────────────────────────
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+async function subscribeToPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    showStatusMessage('הדפדפן שלך לא תומך בהתראות push.', 'error');
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    showStatusMessage('לא אושרה הרשאה לקבלת התראות.', 'error');
+    updatePushButtonState();
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(FCM_VAPID_PUBLIC_KEY)
+      });
+    }
+    // Save subscription to Google Apps Script backend
+    const apiUrl = localStorage.getItem('apiUrl');
+    if (apiUrl) {
+      await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'savePushSubscription',
+          secret: localStorage.getItem('sharedSecret') || '',
+          subscription: sub.toJSON()
+        })
+      });
+    }
+    localStorage.setItem('pushSubscribed', '1');
+    updatePushButtonState();
+    showStatusMessage('✅ הרשמת להתראות בהצלחה!', 'success');
+  } catch (err) {
+    console.error('Push subscribe error:', err);
+    showStatusMessage('שגיאה בהרשמה להתראות: ' + err.message, 'error');
+  }
+}
+
+async function unsubscribeFromPush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+    localStorage.removeItem('pushSubscribed');
+    updatePushButtonState();
+    showStatusMessage('בוטלה הרשמה להתראות.', 'info');
+  } catch (err) {
+    console.error('Push unsubscribe error:', err);
+  }
+}
+
+function updatePushButtonState() {
+  const btn = document.getElementById('pushSubscribeBtn');
+  if (!btn) return;
+  if (!('PushManager' in window)) {
+    btn.textContent = 'הדפדפן לא נתמך';
+    btn.disabled = true;
+    return;
+  }
+  const subscribed = localStorage.getItem('pushSubscribed') === '1';
+  btn.textContent = subscribed ? 'בטל הרשמה להתראות' : 'הפעל התראות push';
+  btn.dataset.subscribed = subscribed ? '1' : '0';
+}
+
+// Wire up push button once DOM is ready
+(function initPushUI() {
+  function setupPushBtn() {
+    updatePushButtonState();
+    const pushBtn = document.getElementById('pushSubscribeBtn');
+    if (pushBtn) {
+      pushBtn.addEventListener('click', () => {
+        if (pushBtn.dataset.subscribed === '1') {
+          unsubscribeFromPush();
+        } else {
+          subscribeToPush();
+        }
+      });
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupPushBtn);
+  } else {
+    setupPushBtn();
+  }
+})();
+
+function showStatusMessage(msg, type) {
+  const el = document.getElementById('statusMessage');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'status-message ' + (type || '');
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}

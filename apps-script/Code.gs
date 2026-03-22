@@ -41,6 +41,13 @@ const NUM_COLS = HEADERS.length;
 // Characters forbidden in Google Sheets tab names
 const FORBIDDEN_NAME_CHARS = /[\[\]*?\/\\]/;
 
+// ─── FCM HTTP v1 Push Configuration ─────────────────────────────────────────
+// Credentials are stored in Script Properties (Project Settings → Script Properties):
+//   FCM_PROJECT_ID   → Firebase project ID (e.g. "my-shopping-app-12345")
+//   FCM_CLIENT_EMAIL → service_account client_email from the downloaded JSON key
+//   FCM_PRIVATE_KEY  → service_account private_key from the downloaded JSON key
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ─── Configuration ───────────────────────────────────────────────────
 
 /**
@@ -160,6 +167,12 @@ function doPost(e) {
         return jsonOk(handleDuplicateList(body));
       case 'clearCompleted':
         return jsonOk(handleClearCompleted(body));
+      case 'savePushSubscription':
+        if (body.subscription) {
+          savePushSubscription_(body.subscription);
+        }
+        return ContentService.createTextOutput(JSON.stringify({ ok: true }))
+          .setMimeType(ContentService.MimeType.JSON);
       default:
         return jsonError('Unknown action: ' + action);
     }
@@ -329,6 +342,11 @@ function handleAddItem(params) {
   ];
 
   sheet.appendRow(row);
+
+  // Notify all subscribers
+  try {
+    sendPushToAll_('רשימת קניות 🛒', 'פריט חדש נוסף לרשימה: ' + (params.name || ''), '');
+  } catch(e) { Logger.log('Push notify error: ' + e); }
 
   return { rowId: rowId, version: getVersion(sheet) };
 }
@@ -543,4 +561,149 @@ function validateListName(name) {
   if (FORBIDDEN_NAME_CHARS.test(name)) {
     throw new Error('שם רשימה מכיל תווים לא חוקיים');
   }
+}
+
+// ─── Push Subscription: save a browser push subscription ─────────────────────
+function savePushSubscription_(subscription) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('_push_subscriptions');
+  if (!sheet) {
+    sheet = ss.insertSheet('_push_subscriptions');
+    sheet.appendRow(['subscription_json', 'created_at']);
+  }
+  const subStr = JSON.stringify(subscription);
+  // Avoid duplicates
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === subStr) return; // already exists
+  }
+  sheet.appendRow([subStr, new Date().toISOString()]);
+}
+
+// ─── Get OAuth2 access token from service account for FCM HTTP v1 ─────────────
+function getFcmAccessToken_() {
+  const props = PropertiesService.getScriptProperties();
+  const clientEmail = props.getProperty('FCM_CLIENT_EMAIL');
+  const privateKey  = props.getProperty('FCM_PRIVATE_KEY').replace(/\\n/g, '\n');
+
+  const now = Math.floor(Date.now() / 1000);
+  const header  = Utilities.base64EncodeWebSafe(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payload = Utilities.base64EncodeWebSafe(JSON.stringify({
+    iss: clientEmail,
+    sub: clientEmail,
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging'
+  }));
+
+  const sigInput  = header + '.' + payload;
+  const signature = Utilities.base64EncodeWebSafe(
+    Utilities.computeRsaSha256Signature(sigInput, privateKey)
+  );
+  const jwt = sigInput + '.' + signature;
+
+  const tokenResp = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    contentType: 'application/x-www-form-urlencoded',
+    payload: 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=' + jwt,
+    muteHttpExceptions: true
+  });
+
+  const tokenData = JSON.parse(tokenResp.getContentText());
+  if (!tokenData.access_token) {
+    Logger.log('FCM token error: ' + tokenResp.getContentText());
+    throw new Error('Could not obtain FCM access token');
+  }
+  return tokenData.access_token;
+}
+
+// ─── Send push notification to all saved subscriptions via FCM HTTP v1 ────────
+function sendPushToAll_(title, body, url) {
+  const props = PropertiesService.getScriptProperties();
+  const projectId = props.getProperty('FCM_PROJECT_ID');
+  if (!projectId) {
+    Logger.log('FCM_PROJECT_ID not set in Script Properties — skipping push.');
+    return;
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('_push_subscriptions');
+  if (!sheet) return;
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return; // header row only, no subscriptions
+
+  let accessToken;
+  try {
+    accessToken = getFcmAccessToken_();
+  } catch (e) {
+    Logger.log('Could not get FCM access token: ' + e);
+    return;
+  }
+
+  const fcmUrl = 'https://fcm.googleapis.com/v1/projects/' + projectId + '/messages:send';
+
+  for (var i = 1; i < data.length; i++) {
+    try {
+      var sub = JSON.parse(data[i][0]);
+      if (!sub || !sub.endpoint) continue;
+
+      // Extract FCM registration token from the endpoint URL
+      // FCM endpoints look like: https://fcm.googleapis.com/fcm/send/TOKEN
+      // or: https://updates.push.services.mozilla.com/... (Firefox — FCM v1 doesn't support these directly)
+      var endpoint = sub.endpoint;
+      if (endpoint.indexOf('fcm.googleapis.com') === -1) {
+        // Non-FCM endpoint (e.g. Firefox/Mozilla) — skip, FCM HTTP v1 only supports Chrome/FCM tokens
+        Logger.log('Skipping non-FCM endpoint: ' + endpoint);
+        continue;
+      }
+
+      var token = endpoint.split('/').pop();
+
+      var message = {
+        message: {
+          token: token,
+          notification: {
+            title: title || 'רשימת קניות',
+            body: body || 'עדכון ברשימה'
+          },
+          webpush: {
+            notification: {
+              icon: '/reshima/icon-192.png',
+              badge: '/reshima/icon-192.png',
+              tag: 'shopping-update',
+              renotify: true
+            },
+            fcm_options: {
+              link: url || 'https://your-app-url/reshima/'
+            }
+          }
+        }
+      };
+
+      var response = UrlFetchApp.fetch(fcmUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken,
+          'Content-Type': 'application/json'
+        },
+        payload: JSON.stringify(message),
+        muteHttpExceptions: true
+      });
+
+      var status = response.getResponseCode();
+      if (status !== 200) {
+        Logger.log('FCM send error for row ' + i + ' (HTTP ' + status + '): ' + response.getContentText());
+      }
+    } catch (err) {
+      Logger.log('Push send error for row ' + i + ': ' + err);
+    }
+  }
+}
+
+// ─── Test function: run this manually from the Apps Script editor to test push ─
+function testSendPush() {
+  sendPushToAll_('🛒 בדיקת התראה', 'אם קיבלת זאת — Push עובד!', '');
+  Logger.log('testSendPush completed — check Apps Script Logs for any errors.');
 }
