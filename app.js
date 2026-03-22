@@ -100,11 +100,11 @@ const qtyDebounceTimers = new Map();
 /** Per-item original quantity before the current debounce sequence started  Map<rowId, qty> */
 const qtyOriginalValues = new Map();
 
-// ─── FCM Push Notifications ──────────────────────────────────────────────────
-// IMPORTANT: Replace with your VAPID public key from:
-// Firebase Console → Project Settings → Cloud Messaging → Web Push certificates → Generate key pair
-// The public key is safe to include in client-side code.
-const FCM_VAPID_PUBLIC_KEY = 'BOGhvyUzGgeKDg4AtHwFJNprIYTCV7p10rQiqUM5ohwYAhmjCNB-UIMGpgYUlfGsJWMgYTXrHWhTxk2Xr6y8aXQ';
+// ─── OneSignal Push Notifications ───────────────────────────────────────────
+// IMPORTANT: Replace with your OneSignal App ID from:
+// OneSignal Dashboard → Settings → Keys & IDs → OneSignal App ID
+// Safe to include in client-side code.
+const ONESIGNAL_APP_ID = 'YOUR_ONESIGNAL_APP_ID';
 // ─────────────────────────────────────────────────────────────────────────────
 
 function showLoading() {
@@ -1342,136 +1342,76 @@ if ('serviceWorker' in navigator) {
 
 boot();
 
-// ─── Push Notification Helpers ───────────────────────────────────────────────
+// ─── OneSignal Push Notification Helpers ─────────────────────────────────────
 
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
-}
-
-async function subscribeToPush() {
-  console.log('[Push DEBUG] subscribeToPush() called');
-  console.log('[Push DEBUG] serviceWorker in navigator:', 'serviceWorker' in navigator);
-  console.log('[Push DEBUG] PushManager in window:', 'PushManager' in window);
-  console.log('[Push DEBUG] Notification.permission (current):', typeof Notification !== 'undefined' ? Notification.permission : 'Notification API unavailable');
-  console.log('[Push DEBUG] FCM_VAPID_PUBLIC_KEY length:', FCM_VAPID_PUBLIC_KEY.length);
-  console.log('[Push DEBUG] localStorage apiUrl key "apiUrl":', localStorage.getItem('apiUrl'));
-  console.log('[Push DEBUG] localStorage apiUrl key "shopping_list_api_url":', localStorage.getItem('shopping_list_api_url'));
-
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.error('[Push DEBUG] Push not supported — aborting. serviceWorker:', 'serviceWorker' in navigator, 'PushManager:', 'PushManager' in window);
-    showStatusMessage('הדפדפן שלך לא תומך בהתראות push.', 'error');
+/**
+ * Initialize OneSignal SDK and wire up the push subscribe button.
+ * Call this once after the page loads.
+ * Requires ONESIGNAL_APP_ID to be set at the top of this file.
+ */
+function initOneSignal() {
+  if (typeof OneSignalDeferred === 'undefined') {
+    console.warn('[OneSignal] SDK not loaded yet — retrying in 1s');
+    setTimeout(initOneSignal, 1000);
     return;
   }
-  // If already permanently denied, the browser won't show a prompt — inform the user how to unblock.
-  if (Notification.permission === 'denied') {
-    showStatusMessage(
-      'ההתראות חסומות בדפדפן. כדי לאפשר: לחץ על 🔒 בשורת הכתובת ← הגדרות אתר ← התראות ← אפשר, ואז רענן.',
-      'error'
-    );
+
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: ONESIGNAL_APP_ID,
+      // Set to false so we control the prompt ourselves via the button
+      promptOptions: {
+        slidedown: { enabled: false }
+      },
+      serviceWorkerParam: { scope: './' },
+      // Use the existing sw.js which already imports OneSignal's SW
+      serviceWorkerPath: 'sw.js'
+    });
+
     updatePushButtonState();
-    return;
-  }
 
-  console.log('[Push DEBUG] Calling Notification.requestPermission()...');
-  const permission = await Notification.requestPermission();
-  console.log('[Push DEBUG] Notification.requestPermission() result:', permission);
-  if (permission !== 'granted') {
-    showStatusMessage('לא אושרה הרשאה לקבלת התראות.', 'error');
-    updatePushButtonState();
-    return;
-  }
-  try {
-    console.log('[Push DEBUG] Waiting for navigator.serviceWorker.ready...');
-    const reg = await navigator.serviceWorker.ready;
-    console.log('[Push DEBUG] SW ready. Scope:', reg.scope);
-    let sub = await reg.pushManager.getSubscription();
-    console.log('[Push DEBUG] Existing subscription:', sub);
-    if (!sub) {
-      console.log('[Push DEBUG] No existing sub — subscribing with VAPID key...');
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(FCM_VAPID_PUBLIC_KEY)
+    const pushBtn = document.getElementById('pushSubscribeBtn');
+    if (pushBtn) {
+      pushBtn.addEventListener('click', async () => {
+        const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
+        if (isSubscribed) {
+          await OneSignal.User.PushSubscription.optOut();
+          showStatusMessage('בוטלה הרשמה להתראות.', 'info');
+        } else {
+          await OneSignal.Notifications.requestPermission();
+          await OneSignal.User.PushSubscription.optIn();
+          showStatusMessage('✅ הרשמת להתראות בהצלחה!', 'success');
+        }
+        updatePushButtonState();
       });
-      console.log('[Push DEBUG] New subscription created:', sub.endpoint);
     }
-    // Save subscription to Google Apps Script backend
-    const apiUrl = localStorage.getItem(storageKeys.apiUrl);  // FIX: was 'apiUrl', correct key is storageKeys.apiUrl
-    console.log('[Push DEBUG] apiUrl from storage (storageKeys.apiUrl):', apiUrl);
-    if (apiUrl) {
-      // Use 'text/plain' to avoid CORS preflight (Apps Script doesn't handle OPTIONS).
-      // doPost reads e.postData.contents and JSON.parses it — works with any Content-Type.
-      const saveResp = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          action: 'savePushSubscription',
-          secret: localStorage.getItem(storageKeys.sharedSecret) || '',
-          subscription: sub.toJSON()
-        })
-      });
-      console.log('[Push DEBUG] savePushSubscription response status:', saveResp.status);
-    } else {
-      console.warn('[Push DEBUG] No apiUrl found — subscription NOT saved to backend.');
-    }
-    localStorage.setItem('pushSubscribed', '1');
-    updatePushButtonState();
-    showStatusMessage('✅ הרשמת להתראות בהצלחה!', 'success');
-  } catch (err) {
-    console.error('[Push DEBUG] Push subscribe error:', err);
-    showStatusMessage('שגיאה בהרשמה להתראות: ' + err.message, 'error');
-  }
+
+    // Keep button label in sync when subscription state changes externally
+    OneSignal.User.PushSubscription.addEventListener('change', updatePushButtonState);
+  });
 }
 
-async function unsubscribeFromPush() {
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    if (sub) await sub.unsubscribe();
-    localStorage.removeItem('pushSubscribed');
-    updatePushButtonState();
-    showStatusMessage('בוטלה הרשמה להתראות.', 'info');
-  } catch (err) {
-    console.error('Push unsubscribe error:', err);
-  }
-}
-
-function updatePushButtonState() {
+async function updatePushButtonState() {
   const btn = document.getElementById('pushSubscribeBtn');
   if (!btn) return;
+
   if (!('PushManager' in window)) {
     btn.textContent = 'הדפדפן לא נתמך';
     btn.disabled = true;
     return;
   }
-  const subscribed = localStorage.getItem('pushSubscribed') === '1';
-  btn.textContent = subscribed ? 'בטל הרשמה להתראות' : 'הפעל התראות push';
-  btn.dataset.subscribed = subscribed ? '1' : '0';
-}
 
-// Wire up push button once DOM is ready
-(function initPushUI() {
-  function setupPushBtn() {
-    updatePushButtonState();
-    const pushBtn = document.getElementById('pushSubscribeBtn');
-    if (pushBtn) {
-      pushBtn.addEventListener('click', () => {
-        if (pushBtn.dataset.subscribed === '1') {
-          unsubscribeFromPush();
-        } else {
-          subscribeToPush();
-        }
-      });
-    }
+  try {
+    // OneSignal may not be ready yet — guard with try/catch
+    const isSubscribed = await window.OneSignal?.User?.PushSubscription?.optedIn;
+    btn.textContent = isSubscribed ? 'בטל הרשמה להתראות' : 'הפעל התראות push';
+    btn.dataset.subscribed = isSubscribed ? '1' : '0';
+  } catch {
+    btn.textContent = 'הפעל התראות push';
+    btn.dataset.subscribed = '0';
   }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupPushBtn);
-  } else {
-    setupPushBtn();
-  }
-})();
+}
 
 function showStatusMessage(msg, type) {
   const el = document.getElementById('statusMessage');
@@ -1480,4 +1420,11 @@ function showStatusMessage(msg, type) {
   el.className = 'status-message ' + (type || '');
   el.classList.remove('hidden');
   setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+// Initialise OneSignal after DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initOneSignal);
+} else {
+  initOneSignal();
 }

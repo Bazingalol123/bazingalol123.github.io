@@ -1,3 +1,6 @@
+// ─── OneSignal Service Worker ─────────────────────────────────────────────────
+importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
+
 const CACHE_NAME = 'shopping-list-v6';
 const urlsToCache = [
   './',

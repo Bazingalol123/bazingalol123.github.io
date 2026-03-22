@@ -232,13 +232,13 @@
           <div class="section-head compact">
             <div>
               <h3>התראות Push</h3>
-              <p class="muted">קבלו התראה כשמתווסף פריט לרשימה.</p>
+              <p class="muted">קבלו התראה כשמתווסף פריט לרשימה — עובד גם על iPhone.</p>
             </div>
           </div>
           <div class="sync-explainer">
             <div class="sync-line"><strong>איך זה עובד:</strong> לאחר הפעלה, תקבלו התראה גם כשהאפליקציה סגורה.</div>
             <div class="sync-line"><strong>שני הצדדים:</strong> יש להפעיל בכל מכשיר בנפרד.</div>
-            <div class="sync-line"><strong>שלב נוסף:</strong> יש להגדיר את מפתח ה-VAPID ב-app.js לאחר יצירת פרויקט Firebase.</div>
+            <div class="sync-line"><strong>iPhone:</strong> יש להוסיף את האפליקציה למסך הבית לפני הפעלת ההתראות.</div>
           </div>
           <div class="action-row wrap">
             <button id="pushSubscribeBtn" type="button">הפעל התראות push</button>
@@ -410,6 +410,7 @@
     </div>
   </dialog>
 
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script src="app.js?v=6"></script>
 </body>
 </html>
