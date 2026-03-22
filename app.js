@@ -1352,43 +1352,63 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function subscribeToPush() {
+  console.log('[Push DEBUG] subscribeToPush() called');
+  console.log('[Push DEBUG] serviceWorker in navigator:', 'serviceWorker' in navigator);
+  console.log('[Push DEBUG] PushManager in window:', 'PushManager' in window);
+  console.log('[Push DEBUG] Notification.permission (current):', typeof Notification !== 'undefined' ? Notification.permission : 'Notification API unavailable');
+  console.log('[Push DEBUG] FCM_VAPID_PUBLIC_KEY length:', FCM_VAPID_PUBLIC_KEY.length);
+  console.log('[Push DEBUG] localStorage apiUrl key "apiUrl":', localStorage.getItem('apiUrl'));
+  console.log('[Push DEBUG] localStorage apiUrl key "shopping_list_api_url":', localStorage.getItem('shopping_list_api_url'));
+
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.error('[Push DEBUG] Push not supported — aborting. serviceWorker:', 'serviceWorker' in navigator, 'PushManager:', 'PushManager' in window);
     showStatusMessage('הדפדפן שלך לא תומך בהתראות push.', 'error');
     return;
   }
+  console.log('[Push DEBUG] Calling Notification.requestPermission()...');
   const permission = await Notification.requestPermission();
+  console.log('[Push DEBUG] Notification.requestPermission() result:', permission);
   if (permission !== 'granted') {
     showStatusMessage('לא אושרה הרשאה לקבלת התראות.', 'error');
     updatePushButtonState();
     return;
   }
   try {
+    console.log('[Push DEBUG] Waiting for navigator.serviceWorker.ready...');
     const reg = await navigator.serviceWorker.ready;
+    console.log('[Push DEBUG] SW ready. Scope:', reg.scope);
     let sub = await reg.pushManager.getSubscription();
+    console.log('[Push DEBUG] Existing subscription:', sub);
     if (!sub) {
+      console.log('[Push DEBUG] No existing sub — subscribing with VAPID key...');
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(FCM_VAPID_PUBLIC_KEY)
       });
+      console.log('[Push DEBUG] New subscription created:', sub.endpoint);
     }
     // Save subscription to Google Apps Script backend
-    const apiUrl = localStorage.getItem('apiUrl');
+    const apiUrl = localStorage.getItem(storageKeys.apiUrl);  // FIX: was 'apiUrl', correct key is storageKeys.apiUrl
+    console.log('[Push DEBUG] apiUrl from storage (storageKeys.apiUrl):', apiUrl);
     if (apiUrl) {
-      await fetch(apiUrl, {
+      const saveResp = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'savePushSubscription',
-          secret: localStorage.getItem('sharedSecret') || '',
+          secret: localStorage.getItem(storageKeys.sharedSecret) || '',  // FIX: use correct key
           subscription: sub.toJSON()
         })
       });
+      console.log('[Push DEBUG] savePushSubscription response status:', saveResp.status);
+    } else {
+      console.warn('[Push DEBUG] No apiUrl found — subscription NOT saved to backend.');
     }
     localStorage.setItem('pushSubscribed', '1');
     updatePushButtonState();
     showStatusMessage('✅ הרשמת להתראות בהצלחה!', 'success');
   } catch (err) {
-    console.error('Push subscribe error:', err);
+    console.error('[Push DEBUG] Push subscribe error:', err);
     showStatusMessage('שגיאה בהרשמה להתראות: ' + err.message, 'error');
   }
 }
