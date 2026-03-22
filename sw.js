@@ -1,12 +1,12 @@
-const CACHE_NAME = 'shopping-list-v5';
+const CACHE_NAME = 'shopping-list-v6';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/styles.css?v=5',
-  '/app.js?v=5',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
+  './',
+  './index.html',
+  './styles.css',
+  './app.js',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 self.addEventListener('install', event => {
@@ -49,8 +49,8 @@ self.addEventListener('push', event => {
   const title = data.title || 'רשימת קניות';
   const options = {
     body: data.body || 'עדכון ברשימה',
-    icon: '/reshima/icon-192.png',
-    badge: '/reshima/icon-192.png',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
     tag: 'shopping-update',
     renotify: true,
     data: { url: data.url || self.registration.scope }
