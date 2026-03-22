@@ -104,7 +104,7 @@ const qtyOriginalValues = new Map();
 // IMPORTANT: Replace with your OneSignal App ID from:
 // OneSignal Dashboard → Settings → Keys & IDs → OneSignal App ID
 // Safe to include in client-side code.
-const ONESIGNAL_APP_ID = 'YOUR_ONESIGNAL_APP_ID';
+const ONESIGNAL_APP_ID = 'bfa7608a-9ec5-49f8-93e9-9f57823db28b';
 // ─────────────────────────────────────────────────────────────────────────────
 
 function showLoading() {
