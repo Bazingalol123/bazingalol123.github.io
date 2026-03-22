@@ -1365,6 +1365,16 @@ async function subscribeToPush() {
     showStatusMessage('הדפדפן שלך לא תומך בהתראות push.', 'error');
     return;
   }
+  // If already permanently denied, the browser won't show a prompt — inform the user how to unblock.
+  if (Notification.permission === 'denied') {
+    showStatusMessage(
+      'ההתראות חסומות בדפדפן. כדי לאפשר: לחץ על 🔒 בשורת הכתובת ← הגדרות אתר ← התראות ← אפשר, ואז רענן.',
+      'error'
+    );
+    updatePushButtonState();
+    return;
+  }
+
   console.log('[Push DEBUG] Calling Notification.requestPermission()...');
   const permission = await Notification.requestPermission();
   console.log('[Push DEBUG] Notification.requestPermission() result:', permission);
@@ -1391,12 +1401,14 @@ async function subscribeToPush() {
     const apiUrl = localStorage.getItem(storageKeys.apiUrl);  // FIX: was 'apiUrl', correct key is storageKeys.apiUrl
     console.log('[Push DEBUG] apiUrl from storage (storageKeys.apiUrl):', apiUrl);
     if (apiUrl) {
+      // Use 'text/plain' to avoid CORS preflight (Apps Script doesn't handle OPTIONS).
+      // doPost reads e.postData.contents and JSON.parses it — works with any Content-Type.
       const saveResp = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'savePushSubscription',
-          secret: localStorage.getItem(storageKeys.sharedSecret) || '',  // FIX: use correct key
+          secret: localStorage.getItem(storageKeys.sharedSecret) || '',
           subscription: sub.toJSON()
         })
       });
