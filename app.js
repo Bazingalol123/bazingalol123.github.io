@@ -1364,9 +1364,9 @@ function initOneSignal() {
       promptOptions: {
         slidedown: { enabled: false }
       },
-      // Point to OneSignalSDKWorker.js in the same directory as the app.
-      // This file must exist at /reshima/OneSignalSDKWorker.js on GitHub Pages.
-      serviceWorkerPath: 'OneSignalSDKWorker.js',
+      // Absolute path required so OneSignal fetches from /reshima/ not from root.
+      // OneSignalSDKWorker.js must exist at https://bazingalol123.github.io/reshima/OneSignalSDKWorker.js
+      serviceWorkerPath: '/reshima/OneSignalSDKWorker.js',
       serviceWorkerParam: { scope: '/reshima/' }
     });
 
