@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=9" />
+  <link rel="stylesheet" href="styles.css?v=10" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
@@ -21,11 +21,14 @@
 <body>
   <div class="app-layout">
     <header class="app-header">
-      <div class="hero-copy">
-        <div>
-          <h1>רשימת קניות משותפת</h1>
-          <p id="currentListName" class="muted" style="margin: 4px 0 0;"></p>
+      <div class="hero-copy" style="justify-content: space-between; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <div>
+            <h1>רשימת קניות משותפת</h1>
+            <p id="currentListName" class="muted" style="margin: 4px 0 0;"></p>
+          </div>
         </div>
+        <button id="globalThemeToggle" class="icon-btn" aria-label="החלף עיצוב" style="font-size: 1.4rem; background: transparent; border: none; cursor: pointer; padding: 4px;">🌙</button>
       </div>
       <div class="hero-stats">
         <div class="metric-card">
@@ -109,12 +112,36 @@
       </section>
 
       <section class="card list-card">
-        <div id="loading" class="empty-state">טוען רשימה...</div>
+        <div id="loading" class="empty-state hidden">טוען רשימה...</div>
         <ul id="itemsList" class="items-list"></ul>
       </section>
     </section>
 
-    <button id="openAddDialogBtn" class="fab" type="button" aria-label="הוסף פריט">＋</button>
+    <div class="fab-container">
+      <button id="mainFab" class="fab" type="button" aria-label="תפריט פעולות" aria-expanded="false">
+        <span class="fab-icon">＋</span>
+      </button>
+      <div class="fab-menu" id="fabMenu" aria-hidden="true">
+        <div class="fab-action-wrapper">
+          <span class="fab-label">הוספה ידנית</span>
+          <button class="fab-action" id="fabAddManual" title="הוספה ידנית">
+            <span class="fab-action-icon">✏️</span>
+          </button>
+        </div>
+        <div class="fab-action-wrapper">
+          <span class="fab-label">סריקת קוד QR</span>
+          <button class="fab-action" id="fabScanQr" title="הצטרפות עם קוד QR">
+            <span class="fab-action-icon">📷</span>
+          </button>
+        </div>
+        <div class="fab-action-wrapper">
+          <span class="fab-label">מצב קנייה</span>
+          <button class="fab-action" id="fabShopMode" title="מצב קנייה">
+            <span class="fab-action-icon">🛒</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <dialog id="addDialog" class="add-dialog" aria-labelledby="addDialogTitle">
       <form id="addItemForm" class="dialog-card" method="dialog">
@@ -213,6 +240,11 @@
           </div>
         </label>
 
+        <div class="action-row" style="margin-top: 16px;">
+          <button type="button" id="generateQrBtn" class="btn-secondary small-btn">שתף באמצעות קוד QR</button>
+        </div>
+        <div id="qrCodeContainer" style="display: none; margin-top: 16px; text-align: center; background: white; padding: 16px; border-radius: var(--radius-lg);"></div>
+
         <div class="dialog-actions">
           <button id="saveSettingsBtn" class="btn-primary">שמור</button>
           <button id="testConnectionBtn" class="btn-secondary">בדיקת חיבור</button>
@@ -259,6 +291,9 @@
             <p class="muted">איך משתמשים?</p>
           </div>
         </div>
+        <div class="action-row" style="margin-top: 0; margin-bottom: 16px;">
+          <button id="themeToggleBtn" type="button" class="btn-secondary">החלף למצב לילה 🌙</button>
+        </div>
         <div id="statusMessage" class="status-message hidden" aria-live="polite" role="status"></div>
         <div class="tips-list">
           <div class="tip-card"><strong>שיתוף</strong><span>שלחו את הכתובת לשותפים, יחד עם ה־URL של Apps Script והסיסמה.</span></div>
@@ -288,31 +323,39 @@
   </nav>
 
   <template id="itemTemplate">
-    <li class="item-card">
-      <label class="check-wrap">
-        <input class="toggle-item" type="checkbox" aria-label="סמן כנקנה" />
-        <span class="check-ui"></span>
-      </label>
-      <div class="item-main">
-        <img class="item-image" src="" alt="" style="display: none;" />
-        <div class="item-texts">
-          <div class="item-top-row">
-            <h4 class="item-name"></h4>
-            <span class="item-category"></span>
+    <li class="item-card swipe-container">
+      <div class="swipe-bg swipe-bg-left">
+        <span class="swipe-icon">🗑️</span>
+      </div>
+      <div class="swipe-bg swipe-bg-right">
+        <span class="swipe-icon">✔️</span>
+      </div>
+      <div class="item-front">
+        <label class="check-wrap">
+          <input class="toggle-item" type="checkbox" aria-label="סמן כנקנה" />
+          <span class="check-ui"></span>
+        </label>
+        <div class="item-main">
+          <img class="item-image" src="" alt="" style="display: none;" />
+          <div class="item-texts">
+            <div class="item-top-row">
+              <h4 class="item-name"></h4>
+              <span class="item-category"></span>
+            </div>
+            <div class="item-meta-row">
+              <span class="item-price meta-pill"></span>
+              <span class="item-date meta-pill subtle"></span>
+            </div>
+            <p class="item-notes"></p>
           </div>
-          <div class="item-meta-row">
-            <span class="item-price meta-pill"></span>
-            <span class="item-date meta-pill subtle"></span>
-          </div>
-          <p class="item-notes"></p>
         </div>
+        <div class="item-stepper">
+          <button class="stepper-btn stepper-dec" type="button" aria-label="הפחת כמות">−</button>
+          <span class="stepper-qty"></span>
+          <button class="stepper-btn stepper-inc" type="button" aria-label="הגדל כמות">+</button>
+        </div>
+        <button class="delete-btn" type="button" title="מחק">🗑</button>
       </div>
-      <div class="item-stepper">
-        <button class="stepper-btn stepper-dec" type="button" aria-label="הפחת כמות">−</button>
-        <span class="stepper-qty"></span>
-        <button class="stepper-btn stepper-inc" type="button" aria-label="הגדל כמות">+</button>
-      </div>
-      <button class="delete-btn" type="button" title="מחק">🗑</button>
     </li>
   </template>
 
@@ -414,6 +457,10 @@
           <span class="action-icon">📋</span>
           <span>שכפול רשימה</span>
         </button>
+        <button id="listActionShareQr" class="list-action-btn">
+          <span class="action-icon">📱</span>
+          <span>שתף רשימה ב־QR</span>
+        </button>
         <button id="listActionClear" class="list-action-btn">
           <span class="action-icon">🧹</span>
           <span>נקה פריטים שנרכשו</span>
@@ -428,7 +475,35 @@
     </div>
   </dialog>
 
+  <dialog id="qrScannerDialog" class="app-dialog" aria-labelledby="qrScannerTitle">
+    <div class="dialog-content">
+      <div class="section-head">
+        <div>
+          <h3 id="qrScannerTitle">סריקת קוד QR</h3>
+          <p class="muted">סרוק קוד כדי להצטרף לרשימה קיימת</p>
+        </div>
+      </div>
+      <div id="qr-reader" style="width: 100%; border-radius: 12px; overflow: hidden; margin-bottom: 16px;"></div>
+      <div class="dialog-actions">
+        <button type="button" id="closeQrScannerBtn" class="btn-secondary">ביטול וסגירה</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="showQrDialog" class="app-dialog" aria-labelledby="showQrDialogTitle">
+    <div class="dialog-content" style="text-align: center;">
+      <h3 id="showQrDialogTitle">קוד QR להצטרפות</h3>
+      <p class="muted">סרקו כדי להצטרף ישירות לרשימה זו</p>
+      <div id="showQrContainer" style="display: inline-block; background: white; padding: 16px; border-radius: var(--radius-lg); margin: 16px 0;"></div>
+      <div class="dialog-actions">
+        <button type="button" id="closeShowQrBtn" class="btn-secondary">סגירה</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>
