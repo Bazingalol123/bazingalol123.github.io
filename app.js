@@ -17,14 +17,28 @@ const state = {
 };
 
 const els = {
+  themeToggleBtn: document.getElementById('themeToggleBtn'),
+  globalThemeToggle: document.getElementById('globalThemeToggle'),
   apiUrl: document.getElementById('apiUrl'),
   sharedSecret: document.getElementById('sharedSecret'),
   toggleSecretBtn: document.getElementById('toggleSecretBtn'),
   saveSettingsBtn: document.getElementById('saveSettingsBtn'),
   testConnectionBtn: document.getElementById('testConnectionBtn'),
   addItemForm: document.getElementById('addItemForm'),
+  generateQrBtn: document.getElementById('generateQrBtn'),
+  qrCodeContainer: document.getElementById('qrCodeContainer'),
+  qrScannerDialog: document.getElementById('qrScannerDialog'),
+  closeQrScannerBtn: document.getElementById('closeQrScannerBtn'),
+  showQrDialog: document.getElementById('showQrDialog'),
+  showQrContainer: document.getElementById('showQrContainer'),
+  closeShowQrBtn: document.getElementById('closeShowQrBtn'),
   addDialog: document.getElementById('addDialog'),
-  openAddDialogBtn: document.getElementById('openAddDialogBtn'),
+  fabContainer: document.querySelector('.fab-container'),
+  mainFab: document.getElementById('mainFab'),
+  fabMenu: document.getElementById('fabMenu'),
+  fabAddManual: document.getElementById('fabAddManual'),
+  fabScanQr: document.getElementById('fabScanQr'),
+  fabShopMode: document.getElementById('fabShopMode'),
   closeAddDialogBtn: document.getElementById('closeAddDialogBtn'),
   searchInput: document.getElementById('searchInput'),
   statusFilter: document.getElementById('statusFilter'),
@@ -69,6 +83,7 @@ const els = {
   listActionsTitle: document.getElementById('listActionsTitle'),
   listActionRename: document.getElementById('listActionRename'),
   listActionDuplicate: document.getElementById('listActionDuplicate'),
+  listActionShareQr: document.getElementById('listActionShareQr'),
   listActionClear: document.getElementById('listActionClear'),
   listActionDelete: document.getElementById('listActionDelete'),
   listActionsClose: document.getElementById('listActionsClose'),
@@ -201,6 +216,13 @@ function hydrateSettings() {
   els.sharedSecret.value = config.sharedSecret;
   els.autoRefreshSelect.value = config.autoRefresh;
   updateConnectionChip(Boolean(config.apiUrl), false);
+
+  const isDark = localStorage.getItem('shopping_list_dark_mode') === '1';
+  if (isDark) {
+    document.body.classList.add('dark-mode');
+    if (els.themeToggleBtn) els.themeToggleBtn.textContent = 'החלף למצב יום ☀️';
+    if (els.globalThemeToggle) els.globalThemeToggle.textContent = '☀️';
+  }
 }
 function updateConnectionChip(hasUrl, connected) {
   [els.connectionChip, els.connectionChipMirror].forEach(chip => {
@@ -684,6 +706,40 @@ function renderItems() {
       });
     }
 
+    // Swipe Actions
+    const itemFront = node.querySelector('.item-front');
+    if (itemFront) {
+      let startX = 0;
+      let currentX = 0;
+      itemFront.addEventListener('touchstart', (e) => {
+        if (e.target.closest('button, input, select')) return;
+        startX = e.touches[0].clientX;
+        node.classList.add('swiping');
+      }, {passive: true});
+      itemFront.addEventListener('touchmove', (e) => {
+        if (!node.classList.contains('swiping')) return;
+        currentX = e.touches[0].clientX - startX;
+        // Limit swipe distance
+        if (currentX > 100) currentX = 100;
+        if (currentX < -100) currentX = -100;
+        itemFront.style.transform = `translateX(${currentX}px)`;
+        const ratio = Math.min(Math.abs(currentX) / 80, 1);
+        node.style.setProperty('--swipe-ratio', ratio);
+      }, {passive: true});
+      itemFront.addEventListener('touchend', () => {
+        if (!node.classList.contains('swiping')) return;
+        node.classList.remove('swiping');
+        itemFront.style.transform = '';
+        node.style.setProperty('--swipe-ratio', '0');
+        if (currentX > 80) {
+          deleteItem(item.rowId);
+        } else if (currentX < -80) {
+          toggleItem(item.rowId, !item.purchased);
+        }
+        currentX = 0;
+      });
+    }
+
     els.itemsList.appendChild(node);
   }
   const doneCount = state.items.filter(item => item.purchased).length;
@@ -796,9 +852,9 @@ async function loadItems(showSuccess = false, {silent=false} = {}) {
   } finally {
     // Bug 1 fix: only hide the visible spinner elements when not in silent mode
     if (!silent) {
-      els.loading.classList.add('hidden');
       hideLoading();
     }
+    els.loading.classList.add('hidden');
   }
 }
 async function checkVersionAndSync() {
@@ -1305,6 +1361,17 @@ function initQuickAddToggle() {
 }
 
 function bindEvents() {
+  function toggleTheme() {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+    localStorage.setItem('shopping_list_dark_mode', isDark ? '1' : '0');
+    if (els.themeToggleBtn) els.themeToggleBtn.textContent = isDark ? 'החלף למצב יום ☀️' : 'החלף למצב לילה 🌙';
+    if (els.globalThemeToggle) els.globalThemeToggle.textContent = isDark ? '☀️' : '🌙';
+  }
+  
+  if (els.themeToggleBtn) els.themeToggleBtn.addEventListener('click', toggleTheme);
+  if (els.globalThemeToggle) els.globalThemeToggle.addEventListener('click', toggleTheme);
+  
   els.toggleSecretBtn.addEventListener('click', () => { els.sharedSecret.type = els.sharedSecret.type === 'password' ? 'text' : 'password'; });
   els.saveSettingsBtn.addEventListener('click', () => {
     setConfig(els.apiUrl.value, els.sharedSecret.value, els.autoRefreshSelect.value);
@@ -1340,10 +1407,128 @@ function bindEvents() {
     });
   }
 
-  if (els.openAddDialogBtn) els.openAddDialogBtn.addEventListener('click', () => {
+  if (els.mainFab) {
+    els.mainFab.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = els.fabContainer.classList.toggle('open');
+      els.mainFab.setAttribute('aria-expanded', isOpen);
+      els.fabMenu.setAttribute('aria-hidden', !isOpen);
+    });
+    document.addEventListener('click', (e) => {
+      if (els.fabContainer && els.fabContainer.classList.contains('open') && !els.fabContainer.contains(e.target)) {
+        els.fabContainer.classList.remove('open');
+        els.mainFab.setAttribute('aria-expanded', 'false');
+        els.fabMenu.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+
+  if (els.fabAddManual) els.fabAddManual.addEventListener('click', () => {
+    els.fabContainer.classList.remove('open');
     els.addItemForm.reset(); // clear old prediction
     els.addDialog?.showModal();
   });
+  if (els.generateQrBtn) {
+    els.generateQrBtn.addEventListener('click', () => {
+      const apiUrl = els.apiUrl.value.trim();
+      const sharedSecret = els.sharedSecret.value;
+      if (!apiUrl) {
+        showStatusMessage('נא להזין URL של Apps Script לפני השיתוף.', 'error');
+        return;
+      }
+      els.qrCodeContainer.innerHTML = '';
+      els.qrCodeContainer.style.display = 'block';
+      const data = JSON.stringify({ apiUrl, sharedSecret });
+      new QRCode(els.qrCodeContainer, {
+        text: data,
+        width: 200,
+        height: 200,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    });
+  }
+
+  let html5QrcodeScanner = null;
+  if (els.fabScanQr) els.fabScanQr.addEventListener('click', () => {
+    els.fabContainer.classList.remove('open');
+    els.qrScannerDialog.showModal();
+    
+    html5QrcodeScanner = new Html5QrcodeScanner(
+      "qr-reader",
+      { fps: 10, qrbox: {width: 250, height: 250} },
+      /* verbose= */ false);
+      
+    html5QrcodeScanner.render(async (decodedText, decodedResult) => {
+      // Handle on success condition with the decoded message
+      try {
+        const data = JSON.parse(decodedText);
+        if (data.apiUrl) {
+          els.apiUrl.value = data.apiUrl;
+          els.sharedSecret.value = data.sharedSecret || '';
+          setConfig(els.apiUrl.value, els.sharedSecret.value, els.autoRefreshSelect.value);
+          
+          if (html5QrcodeScanner) {
+            html5QrcodeScanner.clear();
+            html5QrcodeScanner = null;
+          }
+          els.qrScannerDialog.close();
+          showStatusMessage('הגדרות עודכנו בהצלחה מקוד QR!', 'success');
+          
+          els.navBtns.forEach(b => b.classList.remove('active'));
+          els.tabPanels.forEach(p => p.classList.remove('active'));
+          
+          if (data.listId) {
+            state.currentListId = data.listId;
+            const listBtn = els.navBtns.find(b => (b.dataset.targetTab || b.dataset.tab) === 'list');
+            if (listBtn) listBtn.classList.add('active');
+            const listPanel = document.getElementById('panel-list');
+            if (listPanel) listPanel.classList.add('active');
+            renderItems(); // Optimistically render if items exist
+            fetchListsAndItems(); // This will fetch and stay on the currentListId
+          } else {
+            const syncBtn = els.navBtns.find(b => (b.dataset.targetTab || b.dataset.tab) === 'sync');
+            if (syncBtn) syncBtn.classList.add('active');
+            const syncPanel = document.getElementById('panel-sync');
+            if (syncPanel) syncPanel.classList.add('active');
+            document.getElementById('testConnectionBtn').click();
+          }
+        }
+      } catch (err) {
+        console.error('QR parse error:', err);
+      }
+    }, (errorMessage) => {
+      // parse error, ignore
+    });
+  });
+
+  if (els.closeQrScannerBtn) {
+    els.closeQrScannerBtn.addEventListener('click', () => {
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear();
+        html5QrcodeScanner = null;
+      }
+      els.qrScannerDialog.close();
+    });
+  }
+
+  let wakeLock = null;
+  if (els.fabShopMode) els.fabShopMode.addEventListener('click', async () => {
+    els.fabContainer.classList.remove('open');
+    const isShopMode = document.body.classList.toggle('shop-mode');
+    
+    if (isShopMode) {
+      els.fabShopMode.querySelector('.fab-action-icon').textContent = '🚪';
+      try {
+        if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+      } catch (err) { console.error('Wake Lock error:', err); }
+    } else {
+      els.fabShopMode.querySelector('.fab-action-icon').textContent = '🛒';
+      if (wakeLock) wakeLock.release().then(() => wakeLock = null);
+    }
+  });
+
   if (els.closeAddDialogBtn) els.closeAddDialogBtn.addEventListener('click', () => els.addDialog?.close());
   els.searchInput.addEventListener('input', e => { state.filters.search = e.target.value; renderItems(); });
   els.statusFilter.addEventListener('change', e => { state.filters.status = e.target.value; renderItems(); });
@@ -1408,6 +1593,27 @@ function bindEvents() {
   els.listActionDuplicate.addEventListener('click', () => {
     duplicateList(listActionsContext.listId, listActionsContext.listName);
   });
+  els.listActionShareQr.addEventListener('click', () => {
+    els.listActionsDialog.close();
+    const apiUrl = els.apiUrl.value.trim();
+    const sharedSecret = els.sharedSecret.value;
+    if (!apiUrl) {
+      showStatusMessage('נא להזין URL של Apps Script לפני השיתוף.', 'error');
+      return;
+    }
+    const data = JSON.stringify({ apiUrl, sharedSecret, listId: listActionsContext.listId });
+    els.showQrContainer.innerHTML = '';
+    new QRCode(els.showQrContainer, {
+      text: data,
+      width: 200,
+      height: 200,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    els.showQrDialog.showModal();
+  });
+  if (els.closeShowQrBtn) els.closeShowQrBtn.addEventListener('click', () => els.showQrDialog.close());
   els.listActionClear.addEventListener('click', () => {
     clearCompleted(listActionsContext.listId);
   });
@@ -1464,7 +1670,7 @@ if ('serviceWorker' in navigator) {
   
   // Then register the new one
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=9')
+    navigator.serviceWorker.register('./sw.js?v=10')
       .then(registration => {
         console.log('Service Worker registered successfully:', registration.scope);
       })
