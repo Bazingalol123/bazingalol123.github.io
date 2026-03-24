@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shopping-list-v6';
+const CACHE_NAME = 'shopping-list-v7';
 const urlsToCache = [
   './',
   './index.html',

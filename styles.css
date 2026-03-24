@@ -773,7 +773,9 @@ dialog p.muted { margin: 0 0 20px; color: var(--text-muted); font-size: 0.9rem; 
 
 .status-message { background: var(--primary-soft); color: var(--primary); padding: 16px; border-radius: var(--radius-lg); font-weight: 600; margin-bottom: 16px; border: 1px solid var(--primary); }
 .status-message.error { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
-.status-message.hidden { display: none !important; }
+
+/* Utility classes for hiding elements */
+.hidden, [hidden] { display: none !important; }
 
 /* Grid form helpers */
 .form-grid.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
