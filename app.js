@@ -1358,40 +1358,49 @@ function initOneSignal() {
 
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   OneSignalDeferred.push(async function(OneSignal) {
-    await OneSignal.init({
-      appId: ONESIGNAL_APP_ID,
-      // Set to false so we control the prompt ourselves via the button
-      promptOptions: {
-        slidedown: { enabled: false }
-      },
-      // Use a relative path so the browser resolves it relative to the current
-      // page origin (/reshima/), yielding /reshima/OneSignalSDKWorker.js.
-      // An absolute path like '/reshima/OneSignalSDKWorker.js' is resolved from
-      // the domain root and breaks on GitHub Pages subpath deployments.
-      serviceWorkerPath: 'OneSignalSDKWorker.js',
-      serviceWorkerParam: { scope: '/reshima/' }
-    });
-
-    updatePushButtonState();
-
-    const pushBtn = document.getElementById('pushSubscribeBtn');
-    if (pushBtn) {
-      pushBtn.addEventListener('click', async () => {
-        const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
-        if (isSubscribed) {
-          await OneSignal.User.PushSubscription.optOut();
-          showStatusMessage('בוטלה הרשמה להתראות.', 'info');
-        } else {
-          await OneSignal.Notifications.requestPermission();
-          await OneSignal.User.PushSubscription.optIn();
-          showStatusMessage('✅ הרשמת להתראות בהצלחה!', 'success');
-        }
-        updatePushButtonState();
+    try {
+      await OneSignal.init({
+        appId: ONESIGNAL_APP_ID,
+        // Set to false so we control the prompt ourselves via the button
+        promptOptions: {
+          slidedown: { enabled: false }
+        },
+        // Use a relative path so the browser resolves it relative to the current
+        // page origin (/reshima/), yielding /reshima/OneSignalSDKWorker.js.
+        // An absolute path like '/reshima/OneSignalSDKWorker.js' is resolved from
+        // the domain root and breaks on GitHub Pages subpath deployments.
+        serviceWorkerPath: 'OneSignalSDKWorker.js',
+        serviceWorkerParam: { scope: '/reshima/' }
       });
-    }
 
-    // Keep button label in sync when subscription state changes externally
-    OneSignal.User.PushSubscription.addEventListener('change', updatePushButtonState);
+      updatePushButtonState();
+
+      const pushBtn = document.getElementById('pushSubscribeBtn');
+      if (pushBtn) {
+        pushBtn.addEventListener('click', async () => {
+          const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
+          if (isSubscribed) {
+            await OneSignal.User.PushSubscription.optOut();
+            showStatusMessage('בוטלה הרשמה להתראות.', 'info');
+          } else {
+            await OneSignal.Notifications.requestPermission();
+            await OneSignal.User.PushSubscription.optIn();
+            showStatusMessage('✅ הרשמת להתראות בהצלחה!', 'success');
+          }
+          updatePushButtonState();
+        });
+      }
+
+      // Keep button label in sync when subscription state changes externally
+      OneSignal.User.PushSubscription.addEventListener('change', updatePushButtonState);
+    } catch (error) {
+      console.warn('[OneSignal] Initialization skipped or failed (likely running on localhost instead of configured domain):', error);
+      const pushBtn = document.getElementById('pushSubscribeBtn');
+      if (pushBtn) {
+        pushBtn.textContent = 'התראות (לא נתמך בדומיין זה)';
+        pushBtn.disabled = true;
+      }
+    }
   });
 }
 
