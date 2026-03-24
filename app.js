@@ -11,7 +11,7 @@ const state = {
   lastLoadedAt: null,
   remoteVersion: '',
   syncing: false,
-  activeTab: 'list',
+  activeTab: 'home',
   lists: [],
   currentListId: null
 };
@@ -54,12 +54,8 @@ const els = {
   syncChip: document.getElementById('syncChip'),
   navBtns: [...document.querySelectorAll('.nav-btn')],
   tabPanels: [...document.querySelectorAll('.tab-panel')],
-  hamburgerBtn: document.getElementById('hamburgerBtn'),
-  sidemenu: document.getElementById('sidemenu'),
-  closeSidemenuBtn: document.getElementById('closeSidemenuBtn'),
-  appBackdrop: document.getElementById('appBackdrop'),
-  listsList: document.getElementById('listsList'),
-  addListBtn: document.getElementById('addListBtn'),
+  homeListsContainer: document.getElementById('homeListsContainer'),
+  homeAddListBtn: document.getElementById('homeAddListBtn'),
   searchProductBtn: document.getElementById('searchProductBtn'),
   currentListName: document.getElementById('currentListName'),
   // Prompt dialog elements
@@ -907,20 +903,32 @@ async function loadLists() {
 }
 
 function renderLists() {
-  els.listsList.innerHTML = '';
-  state.lists.forEach(list => {
-    const isActive = list.id == state.currentListId;
-    const li = document.createElement('li');
-    li.className = `drawer-list-item${isActive ? ' active' : ''}`;
-    li.innerHTML = `
-      <button class="list-name-btn" data-list-id="${list.id}">
-        ${escapeHtml(list.name)}
-        <span class="list-item-count">${list.itemCount || 0}</span>
-      </button>
-      <button class="list-more-btn" data-list-id="${list.id}" data-list-name="${escapeHtml(list.name)}">⋮</button>
-    `;
-    els.listsList.appendChild(li);
-  });
+  if (els.homeListsContainer) {
+    els.homeListsContainer.innerHTML = '';
+    state.lists.forEach(list => {
+      const isActive = list.id == state.currentListId;
+      const card = document.createElement('div');
+      card.className = `home-list-card${isActive ? ' active-list' : ''}`;
+      card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <h4 style="margin:0; padding-top:4px;">${escapeHtml(list.name)}</h4>
+          <button class="list-more-btn" data-list-id="${list.id}" data-list-name="${escapeHtml(list.name)}">⋮</button>
+        </div>
+        <div class="list-meta">
+          <span>${list.itemCount || 0} פריטים</span>
+          ${isActive ? '<span style="color:var(--primary); font-size:12px; font-weight: 700;">★ נבחר</span>' : ''}
+        </div>
+      `;
+      // Handle click on the card itself to switch list
+      card.addEventListener('click', (e) => {
+        if (!e.target.closest('.list-more-btn')) {
+          switchList(list.id);
+        }
+      });
+      els.homeListsContainer.appendChild(card);
+    });
+  }
+
   const currentList = state.lists.find(l => l.id == state.currentListId);
   els.currentListName.textContent = currentList ? currentList.name : '';
 }
@@ -936,31 +944,10 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-/**
- * Close the side menu drawer explicitly.
- */
-function closeSidemenu() {
-  els.sidemenu.classList.remove('open');
-  els.appBackdrop.classList.remove('open');
-}
-
-/**
- * Open the side menu drawer explicitly.
- */
-function openSidemenu() {
-  els.sidemenu.classList.add('open');
-  els.appBackdrop.classList.add('open');
-}
-
-function toggleSidemenu() {
-  const isOpen = els.sidemenu.classList.toggle('open');
-  els.appBackdrop.classList.toggle('open', isOpen);
-}
-
 async function switchList(listId) {
   state.currentListId = listId;
   renderLists();
-  closeSidemenu();
+  switchTab('list');
   await loadItems();
 }
 
@@ -1238,35 +1225,26 @@ function bindEvents() {
     silentRefresh();        // also sync instantly when the window regains focus
   });
 
-  // Side menu events
-  els.hamburgerBtn.addEventListener('click', toggleSidemenu);
-  els.closeSidemenuBtn.addEventListener('click', closeSidemenu);
-  els.appBackdrop.addEventListener('click', toggleSidemenu);
+  // Event delegation for home lists container (for the more button)
+  if (els.homeListsContainer) {
+    els.homeListsContainer.addEventListener('click', (e) => {
+      // Handle more button click → open list actions
+      const moreBtn = e.target.closest('.list-more-btn');
+      if (moreBtn) {
+        e.stopPropagation();
+        const listId = moreBtn.dataset.listId;
+        const listName = moreBtn.dataset.listName;
+        if (listId) openListActions(listId, listName);
+      }
+    });
+  }
 
-  // Create list — use styled prompt dialog instead of native prompt()
-  els.addListBtn.addEventListener('click', async () => {
-    const name = await showPromptDialog('רשימה חדשה', 'שם הרשימה', '');
-    if (name) await createList(name);
-  });
-
-  // Event delegation for drawer list buttons
-  els.listsList.addEventListener('click', (e) => {
-    // Handle list name button click → switch list
-    const nameBtn = e.target.closest('.list-name-btn');
-    if (nameBtn) {
-      const listId = nameBtn.dataset.listId;
-      if (listId) switchList(listId);
-      return;
-    }
-    // Handle more button click → open list actions
-    const moreBtn = e.target.closest('.list-more-btn');
-    if (moreBtn) {
-      const listId = moreBtn.dataset.listId;
-      const listName = moreBtn.dataset.listName;
-      if (listId) openListActions(listId, listName);
-      return;
-    }
-  });
+  if (els.homeAddListBtn) {
+    els.homeAddListBtn.addEventListener('click', async () => {
+      const name = await showPromptDialog('רשימה חדשה', 'שם הרשימה', '');
+      if (name) await createList(name);
+    });
+  }
 
   // List actions dialog buttons
   els.listActionsClose.addEventListener('click', () => els.listActionsDialog.close());
@@ -1302,14 +1280,16 @@ function boot() {
   bindEvents();
   initFilterToggle();
   initQuickAddToggle();
-  // Bug 5 fix: explicitly activate the Items/list tab on startup
-  switchTab('list');
+  // Bug 5 fix: explicitly activate the Home tab on startup
+  switchTab('home');
   setAutoRefresh(getConfig().autoRefresh || '5');
   if (getConfig().apiUrl) {
     loadLists().then(() => {
-      // Ensure we're on the list tab after loading, then load items
-      switchTab('list');
-      return loadItems();
+      // Ensure we're on the home tab after loading
+      switchTab('home');
+      if (state.currentListId) {
+        return loadItems(false, { silent: true });
+      }
     });
   } else {
     els.loading.classList.add('hidden');
@@ -1330,7 +1310,7 @@ if ('serviceWorker' in navigator) {
   
   // Then register the new one
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=7')
+    navigator.serviceWorker.register('./sw.js?v=9')
       .then(registration => {
         console.log('Service Worker registered successfully:', registration.scope);
       })

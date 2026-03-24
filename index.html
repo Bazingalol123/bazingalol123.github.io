@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=7" />
+  <link rel="stylesheet" href="styles.css?v=9" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
@@ -22,9 +22,6 @@
   <div class="app-layout">
     <header class="app-header">
       <div class="hero-copy">
-        <button id="hamburgerBtn" class="hamburger-btn" aria-label="תפריט">
-          <span></span><span></span><span></span>
-        </button>
         <div>
           <h1>רשימת קניות משותפת</h1>
           <p id="currentListName" class="muted" style="margin: 4px 0 0;"></p>
@@ -50,21 +47,23 @@
       </div>
     </header>
 
-    <aside id="sidemenu" class="app-drawer">
-      <div class="sidemenu-header">
-        <h2>הרשימות שלי</h2>
-        <button id="closeSidemenuBtn" class="close-btn" aria-label="סגור תפריט">×</button>
-      </div>
-      <ul id="listsList" class="lists-list">
-        <!-- Lists will be populated here -->
-      </ul>
-      <button id="addListBtn" class="add-list-btn">+ רשימה חדשה</button>
-    </aside>
-
-    <div class="app-backdrop" id="appBackdrop"></div>
-
     <main class="app-main">
-      <section class="tab-panel active" data-tab="list" role="tabpanel" id="panel-list" aria-labelledby="tab-list">
+      <section class="tab-panel active" data-tab="home" role="tabpanel" id="panel-home" aria-labelledby="tab-home">
+        <section class="card home-card">
+          <div class="section-head compact" style="padding: 16px 16px 0;">
+            <div>
+              <h3>הרשימות שלי</h3>
+              <p class="muted">בחר רשימה או צור חדשה</p>
+            </div>
+            <button id="homeAddListBtn" class="small-btn btn-secondary" style="width: auto;">+ חדשה</button>
+          </div>
+          <div id="homeListsContainer" class="home-lists-grid">
+            <!-- Home lists will be populated here -->
+          </div>
+        </section>
+      </section>
+
+      <section class="tab-panel" data-tab="list" role="tabpanel" id="panel-list" aria-labelledby="tab-list">
       
       <section class="card filters-card">
         <div class="section-head compact">
@@ -256,7 +255,10 @@
   </main>
 
   <nav class="bottom-nav" role="tablist" aria-label="תפריט תחתון">
-    <button class="nav-btn active" data-target-tab="list" role="tab" aria-selected="true" aria-controls="panel-list" id="tab-list">
+    <button class="nav-btn active" data-target-tab="home" role="tab" aria-selected="true" aria-controls="panel-home" id="tab-home">
+      <span class="nav-icon">🏠</span>בית
+    </button>
+    <button class="nav-btn" data-target-tab="list" role="tab" aria-selected="false" aria-controls="panel-list" id="tab-list">
       <span class="nav-icon">📋</span>רשימה
     </button>
     <button class="nav-btn" data-target-tab="categories" role="tab" aria-selected="false" aria-controls="panel-categories" id="tab-categories">
@@ -397,6 +399,6 @@
   </dialog>
 
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
