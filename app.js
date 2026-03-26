@@ -1451,7 +1451,13 @@ function bindEvents() {
     });
   }
 
-  const html5QrCode = new Html5Qrcode("hidden-scanner-container");
+  let html5QrCodeInstance = null;
+  function getHtml5QrCode() {
+    if (!html5QrCodeInstance) {
+      html5QrCodeInstance = new Html5Qrcode("hidden-scanner-container");
+    }
+    return html5QrCodeInstance;
+  }
 
   if (els.fabScanQr && els.qrFileInput) {
     els.fabScanQr.addEventListener('click', () => {
@@ -1464,7 +1470,8 @@ function bindEvents() {
       const file = e.target.files[0];
       try {
         showStatusMessage('סורק קוד QR מהתמונה...', 'success');
-        const decodedText = await html5QrCode.scanFile(file, true);
+        const scanner = getHtml5QrCode();
+        const decodedText = await scanner.scanFile(file, true);
         const data = JSON.parse(decodedText);
         
         if (data.apiUrl) {
@@ -1518,7 +1525,8 @@ function bindEvents() {
       nameInput.disabled = true;
       
       try {
-        const decodedText = await html5QrCode.scanFile(file, true);
+        const scanner = getHtml5QrCode();
+        const decodedText = await scanner.scanFile(file, true);
         nameInput.value = 'מחפש ברקוד...';
         
         const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
