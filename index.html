@@ -489,7 +489,7 @@
 
   <input type="file" id="qrFileInput" accept="image/*" capture="environment" style="display: none;" />
   <input type="file" id="barcodeFileInput" accept="image/*" capture="environment" style="display: none;" />
-  <div id="hidden-scanner-container" style="display: none;"></div>
+  <div id="hidden-scanner-container" style="position: absolute; top: -9999px; left: -9999px; width: 400px; height: 400px; overflow: hidden;"></div>
 
   <script src="https://unpkg.com/html5-qrcode" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>

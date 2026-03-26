@@ -1469,9 +1469,9 @@ function bindEvents() {
       if (e.target.files.length === 0) return;
       const file = e.target.files[0];
       try {
-        showStatusMessage('סורק קוד QR מהתמונה...', 'success');
+        showStatusMessage('מפענח קוד QR בתמונה...', 'success');
         const scanner = getHtml5QrCode();
-        const decodedText = await scanner.scanFile(file, true);
+        const decodedText = await scanner.scanFile(file, false);
         const data = JSON.parse(decodedText);
         
         if (data.apiUrl) {
@@ -1521,12 +1521,12 @@ function bindEvents() {
       const nameInput = els.addItemForm.elements['name'];
       const imageInput = els.addItemForm.elements['image'];
       
-      nameInput.value = 'סורק תמונה...';
+      nameInput.value = 'מפענח תמונה...';
       nameInput.disabled = true;
       
       try {
         const scanner = getHtml5QrCode();
-        const decodedText = await scanner.scanFile(file, true);
+        const decodedText = await scanner.scanFile(file, false);
         nameInput.value = 'מחפש ברקוד...';
         
         const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
