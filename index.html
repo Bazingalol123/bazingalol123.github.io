@@ -502,9 +502,35 @@
     </div>
   </dialog>
 
-  <input type="file" id="qrFileInput" accept="image/*" capture="environment" style="display: none;" />
-  <input type="file" id="barcodeFileInput" accept="image/*" capture="environment" style="display: none;" />
-  <div id="hidden-scanner-container" style="position: absolute; top: -9999px; left: -9999px; width: 400px; height: 400px; overflow: hidden;"></div>
+  <dialog id="qrScannerDialog" class="app-dialog" aria-labelledby="qrScannerTitle">
+    <div class="dialog-content">
+      <div class="section-head">
+        <div>
+          <h3 id="qrScannerTitle">סריקת קוד QR</h3>
+          <p class="muted">סרוק קוד כדי להצטרף לרשימה קיימת</p>
+        </div>
+      </div>
+      <div id="qr-reader" style="width: 100%; border-radius: 12px; overflow: hidden; margin-bottom: 16px;"></div>
+      <div class="dialog-actions">
+        <button type="button" id="closeQrScannerBtn" class="btn-secondary">ביטול וסגירה</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="barcodeScannerDialog" class="app-dialog" aria-labelledby="barcodeScannerTitle">
+    <div class="dialog-content">
+      <div class="section-head">
+        <div>
+          <h3 id="barcodeScannerTitle">סריקת ברקוד פריט</h3>
+          <p class="muted">בחר מצלמה וסרוק ברקוד כדי להוסיף את הפריט אוטומטית</p>
+        </div>
+      </div>
+      <div id="barcode-reader" style="width: 100%; border-radius: 12px; overflow: hidden; margin-bottom: 16px;"></div>
+      <div class="dialog-actions">
+        <button type="button" id="closeBarcodeScannerBtn" class="btn-secondary">ביטול וסגירה</button>
+      </div>
+    </div>
+  </dialog>
 
   <script src="https://unpkg.com/html5-qrcode" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>

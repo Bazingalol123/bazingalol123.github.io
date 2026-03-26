@@ -27,8 +27,10 @@ const els = {
   addItemForm: document.getElementById('addItemForm'),
   generateQrBtn: document.getElementById('generateQrBtn'),
   qrCodeContainer: document.getElementById('qrCodeContainer'),
-  qrFileInput: document.getElementById('qrFileInput'),
-  barcodeFileInput: document.getElementById('barcodeFileInput'),
+  qrScannerDialog: document.getElementById('qrScannerDialog'),
+  closeQrScannerBtn: document.getElementById('closeQrScannerBtn'),
+  barcodeScannerDialog: document.getElementById('barcodeScannerDialog'),
+  closeBarcodeScannerBtn: document.getElementById('closeBarcodeScannerBtn'),
   scanBarcodeBtn: document.getElementById('scanBarcodeBtn'),
   showQrDialog: document.getElementById('showQrDialog'),
   showQrContainer: document.getElementById('showQrContainer'),
@@ -1459,34 +1461,30 @@ function bindEvents() {
     });
   }
 
-  let html5QrCodeInstance = null;
-  function getHtml5QrCode() {
-    if (!html5QrCodeInstance) {
-      html5QrCodeInstance = new Html5Qrcode("hidden-scanner-container");
-    }
-    return html5QrCodeInstance;
-  }
-
-  if (els.fabScanQr && els.qrFileInput) {
-    els.fabScanQr.addEventListener('click', () => {
-      els.fabContainer.classList.remove('open');
-      els.qrFileInput.click();
-    });
-
-    els.qrFileInput.addEventListener('change', async (e) => {
-      if (e.target.files.length === 0) return;
-      const file = e.target.files[0];
+  let html5QrcodeScanner = null;
+  
+  if (els.fabScanQr) els.fabScanQr.addEventListener('click', () => {
+    els.fabContainer.classList.remove('open');
+    els.qrScannerDialog.showModal();
+    
+    html5QrcodeScanner = new Html5QrcodeScanner(
+      "qr-reader",
+      { fps: 10, qrbox: {width: 250, height: 250}, rememberLastUsedCamera: true },
+      /* verbose= */ false);
+      
+    html5QrcodeScanner.render(async (decodedText, decodedResult) => {
       try {
-        showStatusMessage('מפענח קוד QR בתמונה...', 'success');
-        const scanner = getHtml5QrCode();
-        const decodedText = await scanner.scanFile(file, false);
         const data = JSON.parse(decodedText);
-        
         if (data.apiUrl) {
           els.apiUrl.value = data.apiUrl;
           els.sharedSecret.value = data.sharedSecret || '';
           setConfig(els.apiUrl.value, els.sharedSecret.value, els.autoRefreshSelect.value);
           
+          if (html5QrcodeScanner) {
+            html5QrcodeScanner.clear();
+            html5QrcodeScanner = null;
+          }
+          els.qrScannerDialog.close();
           showStatusMessage('הגדרות עודכנו בהצלחה מקוד QR!', 'success');
           
           els.navBtns.forEach(b => b.classList.remove('active'));
@@ -1498,8 +1496,8 @@ function bindEvents() {
             if (listBtn) listBtn.classList.add('active');
             const listPanel = document.getElementById('panel-list');
             if (listPanel) listPanel.classList.add('active');
-            renderItems(); // Optimistically render if items exist
-            fetchListsAndItems(); // This will fetch and stay on the currentListId
+            renderItems();
+            fetchListsAndItems();
           } else {
             const syncBtn = els.navBtns.find(b => (b.dataset.targetTab || b.dataset.tab) === 'sync');
             if (syncBtn) syncBtn.classList.add('active');
@@ -1510,10 +1508,19 @@ function bindEvents() {
         }
       } catch (err) {
         console.error('QR parse error:', err);
-        showStatusMessage('שגיאה בקריאת הקוד. נסה לצלם שוב.', 'error');
-      } finally {
-        els.qrFileInput.value = '';
       }
+    }, (errorMessage) => {
+      // parse error, ignore
+    });
+  });
+
+  if (els.closeQrScannerBtn) {
+    els.closeQrScannerBtn.addEventListener('click', () => {
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear();
+        html5QrcodeScanner = null;
+      }
+      els.qrScannerDialog.close();
     });
   }
 
@@ -1536,14 +1543,21 @@ function bindEvents() {
     }
   }
 
-  if (els.scanBarcodeBtn && els.barcodeFileInput) {
-    els.scanBarcodeBtn.addEventListener('click', () => {
-      els.barcodeFileInput.click();
-    });
-
-    els.barcodeFileInput.addEventListener('change', async (e) => {
-      if (e.target.files.length === 0) return;
-      const file = e.target.files[0];
+  let barcodeHtml5QrcodeScanner = null;
+  if (els.scanBarcodeBtn) els.scanBarcodeBtn.addEventListener('click', () => {
+    els.barcodeScannerDialog.showModal();
+    
+    barcodeHtml5QrcodeScanner = new Html5QrcodeScanner(
+      "barcode-reader",
+      { fps: 10, qrbox: {width: 250, height: 100}, rememberLastUsedCamera: true },
+      /* verbose= */ false);
+      
+    barcodeHtml5QrcodeScanner.render(async (decodedText, decodedResult) => {
+      if (barcodeHtml5QrcodeScanner) {
+        barcodeHtml5QrcodeScanner.clear();
+        barcodeHtml5QrcodeScanner = null;
+      }
+      els.barcodeScannerDialog.close();
       
       const nameInput = els.addItemForm.elements['name'];
       const imageInput = els.addItemForm.elements['image'];
@@ -1552,26 +1566,17 @@ function bindEvents() {
       
       els.scanRetakeBtn.onclick = () => {
         els.scanProgressDialog.close();
-        els.barcodeFileInput.click();
+        els.scanBarcodeBtn.click();
       };
       els.scanCloseBtn.onclick = () => {
         els.scanProgressDialog.close();
         nameInput.focus();
       };
       
-      showScanProgressDialog('📸', 'מפענח תמונה...', 'אנא המתן בזמן שאנו סורקים את הברקוד.', true);
-      const start = Date.now();
+      showScanProgressDialog('🔍', 'מחפש במאגר...', 'בודק את הברקוד מול מאגר המוצרים.', true);
+      const searchStart = Date.now();
       
       try {
-        const scanner = getHtml5QrCode();
-        const decodedText = await scanner.scanFile(file, false);
-        
-        const elapsed1 = Date.now() - start;
-        if (elapsed1 < 800) await new Promise(r => setTimeout(r, 800 - elapsed1));
-        
-        showScanProgressDialog('🔍', 'מחפש במאגר...', 'בודק את הברקוד מול מאגר המוצרים.', true);
-        const searchStart = Date.now();
-        
         const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
         const data = await response.json();
         
@@ -1608,13 +1613,23 @@ function bindEvents() {
           }
         }
       } catch (err) {
-        console.error('Barcode scan/fetch error:', err);
-        const elapsedErr = Date.now() - start;
+        console.error('Barcode fetch error:', err);
+        const elapsedErr = Date.now() - searchStart;
         if (elapsedErr < 800) await new Promise(r => setTimeout(r, 800 - elapsedErr));
-        showScanProgressDialog('❌', 'לא זוהה ברקוד', 'לא הצלחנו למצוא ברקוד בתמונה. נסו שוב קרוב יותר ובאור טוב.', false);
-      } finally {
-        els.barcodeFileInput.value = '';
+        showScanProgressDialog('❌', 'שגיאת רשת', 'לא הצלחנו להתחבר למאגר המוצרים.', false);
       }
+    }, (errorMessage) => {
+      // parse error, ignore
+    });
+  });
+
+  if (els.closeBarcodeScannerBtn) {
+    els.closeBarcodeScannerBtn.addEventListener('click', () => {
+      if (barcodeHtml5QrcodeScanner) {
+        barcodeHtml5QrcodeScanner.clear();
+        barcodeHtml5QrcodeScanner = null;
+      }
+      els.barcodeScannerDialog.close();
     });
   }
 
