@@ -33,6 +33,14 @@ const els = {
   showQrDialog: document.getElementById('showQrDialog'),
   showQrContainer: document.getElementById('showQrContainer'),
   closeShowQrBtn: document.getElementById('closeShowQrBtn'),
+  scanProgressDialog: document.getElementById('scanProgressDialog'),
+  scanProgressIcon: document.getElementById('scanProgressIcon'),
+  scanProgressTitle: document.getElementById('scanProgressTitle'),
+  scanProgressDesc: document.getElementById('scanProgressDesc'),
+  scanProgressSpinner: document.getElementById('scanProgressSpinner'),
+  scanProgressActions: document.getElementById('scanProgressActions'),
+  scanRetakeBtn: document.getElementById('scanRetakeBtn'),
+  scanCloseBtn: document.getElementById('scanCloseBtn'),
   addDialog: document.getElementById('addDialog'),
   fabContainer: document.querySelector('.fab-container'),
   mainFab: document.getElementById('mainFab'),
@@ -1509,6 +1517,25 @@ function bindEvents() {
     });
   }
 
+  function showScanProgressDialog(icon, title, desc, isProcessing) {
+    els.scanProgressIcon.textContent = icon;
+    els.scanProgressTitle.textContent = title;
+    els.scanProgressTitle.style.color = (icon === '✅') ? 'var(--success)' : (icon === '⚠️' ? '#d97706' : (icon === '❌' ? 'var(--danger)' : 'inherit'));
+    els.scanProgressDesc.textContent = desc;
+    
+    if (isProcessing) {
+      els.scanProgressSpinner.style.display = 'block';
+      els.scanProgressActions.style.display = 'none';
+    } else {
+      els.scanProgressSpinner.style.display = 'none';
+      els.scanProgressActions.style.display = 'flex';
+    }
+    
+    if (!els.scanProgressDialog.open) {
+      els.scanProgressDialog.showModal();
+    }
+  }
+
   if (els.scanBarcodeBtn && els.barcodeFileInput) {
     els.scanBarcodeBtn.addEventListener('click', () => {
       els.barcodeFileInput.click();
@@ -1520,43 +1547,73 @@ function bindEvents() {
       
       const nameInput = els.addItemForm.elements['name'];
       const imageInput = els.addItemForm.elements['image'];
+      const notesInput = els.addItemForm.elements['notes'];
+      const categorySelect = els.addItemForm.elements['category'];
       
-      nameInput.value = 'מפענח תמונה...';
-      nameInput.disabled = true;
+      els.scanRetakeBtn.onclick = () => {
+        els.scanProgressDialog.close();
+        els.barcodeFileInput.click();
+      };
+      els.scanCloseBtn.onclick = () => {
+        els.scanProgressDialog.close();
+        nameInput.focus();
+      };
+      
+      showScanProgressDialog('📸', 'מפענח תמונה...', 'אנא המתן בזמן שאנו סורקים את הברקוד.', true);
+      const start = Date.now();
       
       try {
         const scanner = getHtml5QrCode();
         const decodedText = await scanner.scanFile(file, false);
-        nameInput.value = 'מחפש ברקוד...';
+        
+        const elapsed1 = Date.now() - start;
+        if (elapsed1 < 800) await new Promise(r => setTimeout(r, 800 - elapsed1));
+        
+        showScanProgressDialog('🔍', 'מחפש במאגר...', 'בודק את הברקוד מול מאגר המוצרים.', true);
+        const searchStart = Date.now();
         
         const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
         const data = await response.json();
         
+        const elapsed2 = Date.now() - searchStart;
+        if (elapsed2 < 600) await new Promise(r => setTimeout(r, 600 - elapsed2));
+        
         if (data.status === 1 && data.product) {
           const product = data.product;
-          nameInput.value = product.product_name_he || product.product_name || decodedText;
+          const foundName = product.product_name_he || product.product_name || decodedText;
+          
+          showScanProgressDialog('✅', 'המוצר אותר!', foundName, false);
+          els.scanProgressActions.style.display = 'none'; // Auto close
+          
+          nameInput.value = foundName;
           if (product.image_front_url) {
             imageInput.value = product.image_front_url;
           }
-          showStatusMessage('מוצר נמצא בהצלחה', 'success');
+          
+          if (typeof predictCategory === 'function' && foundName) {
+            const predicted = predictCategory(foundName);
+            if (predicted && !categorySelect.value) {
+              categorySelect.value = predicted;
+            }
+          }
+          
+          setTimeout(() => {
+            if (els.scanProgressDialog.open) els.scanProgressDialog.close();
+          }, 1500);
+          
         } else {
-          nameInput.value = decodedText;
-          showStatusMessage('המוצר לא נמצא במאגר, הברקוד הוזן כשם', 'warning');
+          showScanProgressDialog('⚠️', 'מוצר חדש', 'הברקוד נסרק בהצלחה, אך אינו במאגר. אנא הקלד את שמו.', false);
+          if (!notesInput.value.includes(decodedText)) {
+            notesInput.value = (notesInput.value ? notesInput.value + ' | ' : '') + decodedText;
+          }
         }
       } catch (err) {
         console.error('Barcode scan/fetch error:', err);
-        nameInput.value = '';
-        showStatusMessage('לא הצלחנו לזהות ברקוד בתמונה', 'error');
+        const elapsedErr = Date.now() - start;
+        if (elapsedErr < 800) await new Promise(r => setTimeout(r, 800 - elapsedErr));
+        showScanProgressDialog('❌', 'לא זוהה ברקוד', 'לא הצלחנו למצוא ברקוד בתמונה. נסו שוב קרוב יותר ובאור טוב.', false);
       } finally {
-        nameInput.disabled = false;
         els.barcodeFileInput.value = '';
-        if (typeof predictCategory === 'function' && nameInput.value) {
-          const predicted = predictCategory(nameInput.value);
-          const categorySelect = els.addItemForm.elements['category'];
-          if (predicted && !categorySelect.value) {
-            categorySelect.value = predicted;
-          }
-        }
       }
     });
   }

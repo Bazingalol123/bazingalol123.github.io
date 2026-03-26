@@ -487,6 +487,21 @@
     </div>
   </dialog>
 
+  <dialog id="scanProgressDialog" class="app-dialog" aria-labelledby="scanProgressTitle">
+    <div class="dialog-content" style="text-align: center; padding-top: 32px;">
+      <div id="scanProgressIcon" style="font-size: 3.5rem; margin-bottom: 16px;">📸</div>
+      <h3 id="scanProgressTitle" style="margin-bottom: 8px;">מפענח תמונה...</h3>
+      <p id="scanProgressDesc" class="muted" style="margin-bottom: 24px;">אנא המתן בזמן שאנו סורקים את התמונה.</p>
+      
+      <div id="scanProgressSpinner" class="spinner" style="margin: 0 auto 16px;"></div>
+      
+      <div id="scanProgressActions" class="dialog-actions" style="display: none; justify-content: center; gap: 12px; margin-top: 16px;">
+        <button type="button" id="scanRetakeBtn" class="btn-primary">צלם שוב</button>
+        <button type="button" id="scanCloseBtn" class="btn-secondary">סגירה</button>
+      </div>
+    </div>
+  </dialog>
+
   <input type="file" id="qrFileInput" accept="image/*" capture="environment" style="display: none;" />
   <input type="file" id="barcodeFileInput" accept="image/*" capture="environment" style="display: none;" />
   <div id="hidden-scanner-container" style="position: absolute; top: -9999px; left: -9999px; width: 400px; height: 400px; overflow: hidden;"></div>
