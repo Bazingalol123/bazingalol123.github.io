@@ -29,6 +29,9 @@ const els = {
   qrCodeContainer: document.getElementById('qrCodeContainer'),
   qrScannerDialog: document.getElementById('qrScannerDialog'),
   closeQrScannerBtn: document.getElementById('closeQrScannerBtn'),
+  barcodeScannerDialog: document.getElementById('barcodeScannerDialog'),
+  closeBarcodeScannerBtn: document.getElementById('closeBarcodeScannerBtn'),
+  scanBarcodeBtn: document.getElementById('scanBarcodeBtn'),
   showQrDialog: document.getElementById('showQrDialog'),
   showQrContainer: document.getElementById('showQrContainer'),
   closeShowQrBtn: document.getElementById('closeShowQrBtn'),
@@ -1510,6 +1513,72 @@ function bindEvents() {
         html5QrcodeScanner = null;
       }
       els.qrScannerDialog.close();
+    });
+  }
+
+  let barcodeHtml5QrcodeScanner = null;
+  if (els.scanBarcodeBtn) els.scanBarcodeBtn.addEventListener('click', () => {
+    els.barcodeScannerDialog.showModal();
+    
+    barcodeHtml5QrcodeScanner = new Html5QrcodeScanner(
+      "barcode-reader",
+      { fps: 10, qrbox: {width: 250, height: 100} },
+      /* verbose= */ false);
+      
+    barcodeHtml5QrcodeScanner.render(async (decodedText, decodedResult) => {
+      if (barcodeHtml5QrcodeScanner) {
+        barcodeHtml5QrcodeScanner.clear();
+        barcodeHtml5QrcodeScanner = null;
+      }
+      els.barcodeScannerDialog.close();
+      
+      const nameInput = els.addItemForm.elements['name'];
+      const imageInput = els.addItemForm.elements['image'];
+      
+      nameInput.value = 'מחפש ברקוד...';
+      nameInput.disabled = true;
+      
+      try {
+        const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
+        const data = await response.json();
+        
+        if (data.status === 1 && data.product) {
+          const product = data.product;
+          nameInput.value = product.product_name_he || product.product_name || decodedText;
+          if (product.image_front_url) {
+            imageInput.value = product.image_front_url;
+          }
+          showStatusMessage('מוצר נמצא בהצלחה', 'success');
+        } else {
+          nameInput.value = decodedText;
+          showStatusMessage('המוצר לא נמצא במאגר, הברקוד הוזן כשם', 'warning');
+        }
+      } catch (err) {
+        console.error('Barcode fetch error:', err);
+        nameInput.value = decodedText;
+        showStatusMessage('שגיאה בחיפוש המוצר', 'error');
+      } finally {
+        nameInput.disabled = false;
+        if (typeof predictCategory === 'function') {
+          const predicted = predictCategory(nameInput.value);
+          const categorySelect = els.addItemForm.elements['category'];
+          if (predicted && !categorySelect.value) {
+            categorySelect.value = predicted;
+          }
+        }
+      }
+    }, (errorMessage) => {
+      // parse error, ignore
+    });
+  });
+
+  if (els.closeBarcodeScannerBtn) {
+    els.closeBarcodeScannerBtn.addEventListener('click', () => {
+      if (barcodeHtml5QrcodeScanner) {
+        barcodeHtml5QrcodeScanner.clear();
+        barcodeHtml5QrcodeScanner = null;
+      }
+      els.barcodeScannerDialog.close();
     });
   }
 

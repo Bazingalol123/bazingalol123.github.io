@@ -156,6 +156,7 @@
           <span>שם פריט *</span>
           <div style="display: flex; gap: 8px;">
             <input name="name" required placeholder="למשל: עגבניות, חלב, פיתות..." style="flex: 1;" />
+            <button type="button" id="scanBarcodeBtn" class="btn-secondary small-btn" title="סריקת ברקוד">📷</button>
             <button type="button" id="searchProductBtn" class="btn-secondary small-btn">מחיר</button>
           </div>
         </label>
@@ -497,6 +498,21 @@
       <div id="showQrContainer" style="display: inline-block; background: white; padding: 16px; border-radius: var(--radius-lg); margin: 16px 0;"></div>
       <div class="dialog-actions">
         <button type="button" id="closeShowQrBtn" class="btn-secondary">סגירה</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="barcodeScannerDialog" class="app-dialog" aria-labelledby="barcodeScannerTitle">
+    <div class="dialog-content">
+      <div class="section-head">
+        <div>
+          <h3 id="barcodeScannerTitle">סריקת ברקוד פריט</h3>
+          <p class="muted">סרוק ברקוד כדי להוסיף את הפריט אוטומטית</p>
+        </div>
+      </div>
+      <div id="barcode-reader" style="width: 100%; border-radius: 12px; overflow: hidden; margin-bottom: 16px;"></div>
+      <div class="dialog-actions">
+        <button type="button" id="closeBarcodeScannerBtn" class="btn-secondary">ביטול וסגירה</button>
       </div>
     </div>
   </dialog>
