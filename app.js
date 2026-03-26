@@ -27,10 +27,8 @@ const els = {
   addItemForm: document.getElementById('addItemForm'),
   generateQrBtn: document.getElementById('generateQrBtn'),
   qrCodeContainer: document.getElementById('qrCodeContainer'),
-  qrScannerDialog: document.getElementById('qrScannerDialog'),
-  closeQrScannerBtn: document.getElementById('closeQrScannerBtn'),
-  barcodeScannerDialog: document.getElementById('barcodeScannerDialog'),
-  closeBarcodeScannerBtn: document.getElementById('closeBarcodeScannerBtn'),
+  qrFileInput: document.getElementById('qrFileInput'),
+  barcodeFileInput: document.getElementById('barcodeFileInput'),
   scanBarcodeBtn: document.getElementById('scanBarcodeBtn'),
   showQrDialog: document.getElementById('showQrDialog'),
   showQrContainer: document.getElementById('showQrContainer'),
@@ -1453,30 +1451,27 @@ function bindEvents() {
     });
   }
 
-  let html5QrcodeScanner = null;
-  if (els.fabScanQr) els.fabScanQr.addEventListener('click', () => {
-    els.fabContainer.classList.remove('open');
-    els.qrScannerDialog.showModal();
-    
-    html5QrcodeScanner = new Html5QrcodeScanner(
-      "qr-reader",
-      { fps: 10, qrbox: {width: 250, height: 250} },
-      /* verbose= */ false);
-      
-    html5QrcodeScanner.render(async (decodedText, decodedResult) => {
-      // Handle on success condition with the decoded message
+  const html5QrCode = new Html5Qrcode("hidden-scanner-container");
+
+  if (els.fabScanQr && els.qrFileInput) {
+    els.fabScanQr.addEventListener('click', () => {
+      els.fabContainer.classList.remove('open');
+      els.qrFileInput.click();
+    });
+
+    els.qrFileInput.addEventListener('change', async (e) => {
+      if (e.target.files.length === 0) return;
+      const file = e.target.files[0];
       try {
+        showStatusMessage('סורק קוד QR מהתמונה...', 'success');
+        const decodedText = await html5QrCode.scanFile(file, true);
         const data = JSON.parse(decodedText);
+        
         if (data.apiUrl) {
           els.apiUrl.value = data.apiUrl;
           els.sharedSecret.value = data.sharedSecret || '';
           setConfig(els.apiUrl.value, els.sharedSecret.value, els.autoRefreshSelect.value);
           
-          if (html5QrcodeScanner) {
-            html5QrcodeScanner.clear();
-            html5QrcodeScanner = null;
-          }
-          els.qrScannerDialog.close();
           showStatusMessage('הגדרות עודכנו בהצלחה מקוד QR!', 'success');
           
           els.navBtns.forEach(b => b.classList.remove('active'));
@@ -1500,45 +1495,32 @@ function bindEvents() {
         }
       } catch (err) {
         console.error('QR parse error:', err);
+        showStatusMessage('שגיאה בקריאת הקוד. נסה לצלם שוב.', 'error');
+      } finally {
+        els.qrFileInput.value = '';
       }
-    }, (errorMessage) => {
-      // parse error, ignore
-    });
-  });
-
-  if (els.closeQrScannerBtn) {
-    els.closeQrScannerBtn.addEventListener('click', () => {
-      if (html5QrcodeScanner) {
-        html5QrcodeScanner.clear();
-        html5QrcodeScanner = null;
-      }
-      els.qrScannerDialog.close();
     });
   }
 
-  let barcodeHtml5QrcodeScanner = null;
-  if (els.scanBarcodeBtn) els.scanBarcodeBtn.addEventListener('click', () => {
-    els.barcodeScannerDialog.showModal();
-    
-    barcodeHtml5QrcodeScanner = new Html5QrcodeScanner(
-      "barcode-reader",
-      { fps: 10, qrbox: {width: 250, height: 100} },
-      /* verbose= */ false);
-      
-    barcodeHtml5QrcodeScanner.render(async (decodedText, decodedResult) => {
-      if (barcodeHtml5QrcodeScanner) {
-        barcodeHtml5QrcodeScanner.clear();
-        barcodeHtml5QrcodeScanner = null;
-      }
-      els.barcodeScannerDialog.close();
+  if (els.scanBarcodeBtn && els.barcodeFileInput) {
+    els.scanBarcodeBtn.addEventListener('click', () => {
+      els.barcodeFileInput.click();
+    });
+
+    els.barcodeFileInput.addEventListener('change', async (e) => {
+      if (e.target.files.length === 0) return;
+      const file = e.target.files[0];
       
       const nameInput = els.addItemForm.elements['name'];
       const imageInput = els.addItemForm.elements['image'];
       
-      nameInput.value = 'מחפש ברקוד...';
+      nameInput.value = 'סורק תמונה...';
       nameInput.disabled = true;
       
       try {
+        const decodedText = await html5QrCode.scanFile(file, true);
+        nameInput.value = 'מחפש ברקוד...';
+        
         const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
         const data = await response.json();
         
@@ -1554,12 +1536,13 @@ function bindEvents() {
           showStatusMessage('המוצר לא נמצא במאגר, הברקוד הוזן כשם', 'warning');
         }
       } catch (err) {
-        console.error('Barcode fetch error:', err);
-        nameInput.value = decodedText;
-        showStatusMessage('שגיאה בחיפוש המוצר', 'error');
+        console.error('Barcode scan/fetch error:', err);
+        nameInput.value = '';
+        showStatusMessage('לא הצלחנו לזהות ברקוד בתמונה', 'error');
       } finally {
         nameInput.disabled = false;
-        if (typeof predictCategory === 'function') {
+        els.barcodeFileInput.value = '';
+        if (typeof predictCategory === 'function' && nameInput.value) {
           const predicted = predictCategory(nameInput.value);
           const categorySelect = els.addItemForm.elements['category'];
           if (predicted && !categorySelect.value) {
@@ -1567,18 +1550,6 @@ function bindEvents() {
           }
         }
       }
-    }, (errorMessage) => {
-      // parse error, ignore
-    });
-  });
-
-  if (els.closeBarcodeScannerBtn) {
-    els.closeBarcodeScannerBtn.addEventListener('click', () => {
-      if (barcodeHtml5QrcodeScanner) {
-        barcodeHtml5QrcodeScanner.clear();
-        barcodeHtml5QrcodeScanner = null;
-      }
-      els.barcodeScannerDialog.close();
     });
   }
 
