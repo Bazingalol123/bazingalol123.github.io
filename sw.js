@@ -1,4 +1,5 @@
-const CACHE_NAME = 'shopping-list-v10';
+const CACHE_NAME = 'shopping-list-v11';
+// OPTIMIZATION: Cache External CDN Scripts to ensure barcode scanner works offline
 const urlsToCache = [
   './',
   './index.html',
@@ -6,7 +7,10 @@ const urlsToCache = [
   './app.js',
   './manifest.json',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  'https://unpkg.com/html5-qrcode',
+  'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
+  // OneSignal intentionally excluded — must stay fresh
 ];
 
 self.addEventListener('install', event => {
