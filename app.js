@@ -1469,7 +1469,7 @@ function bindEvents() {
     
     html5QrcodeScanner = new Html5QrcodeScanner(
       "qr-reader",
-      { fps: 10, qrbox: {width: 250, height: 250}, rememberLastUsedCamera: true },
+      { fps: 10, qrbox: {width: 250, height: 250}, rememberLastUsedCamera: true, useBarCodeDetectorIfSupported: true },
       /* verbose= */ false);
       
     html5QrcodeScanner.render(async (decodedText, decodedResult) => {
@@ -1551,7 +1551,8 @@ function bindEvents() {
       "barcode-reader",
       { 
         fps: 30, 
-        rememberLastUsedCamera: true
+        rememberLastUsedCamera: true,
+        useBarCodeDetectorIfSupported: true
       },
       /* verbose= */ false);
       
