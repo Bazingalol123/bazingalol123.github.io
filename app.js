@@ -1,3 +1,6 @@
+// OPTIMIZATION: Cache key for localStorage
+const LIST_CACHE_KEY = 'shopping_list_items_cache';
+
 const storageKeys = {
   apiUrl: 'shopping_list_api_url',
   sharedSecret: 'shopping_list_shared_secret',
@@ -586,6 +589,39 @@ function renderQuickAddCarousel() {
   });
 }
 
+// OPTIMIZATION: Offline Mutation Queue for resilience
+async function drainMutationQueue() {
+  let queue = [];
+  try {
+    queue = JSON.parse(localStorage.getItem('mutation_queue') || '[]');
+  } catch(e) { return; }
+  if (!queue.length) return;
+
+  localStorage.removeItem('mutation_queue');
+  setSyncChip('מסנכרן שינויים שמורים...', 'disconnected');
+
+  for (const { action, payload } of queue) {
+    try {
+      await callApi(action, payload);
+    } catch(e) {
+      // If it fails again, re-queue it
+      const current = JSON.parse(localStorage.getItem('mutation_queue') || '[]');
+      current.push({ action, payload, timestamp: Date.now() });
+      localStorage.setItem('mutation_queue', JSON.stringify(current));
+    }
+  }
+  await silentRefresh();
+}
+
+function queueMutation(action, payload) {
+  try {
+    const queue = JSON.parse(localStorage.getItem('mutation_queue') || '[]');
+    queue.push({ action, payload, timestamp: Date.now() });
+    localStorage.setItem('mutation_queue', JSON.stringify(queue));
+    showMessage('אין חיבור — השינוי ישמר ויסונכרן כשהחיבור יחזור.');
+  } catch(e) {}
+}
+
 async function quickAddItem(name, category) {
   if (!state.currentListId) return;
 
@@ -625,6 +661,12 @@ async function quickAddItem(name, category) {
     // Background sync to replace temp rowId with the real server rowId
     silentRefresh();
   } catch (error) {
+    // OPTIMIZATION: Queue offline mutation
+    if (!navigator.onLine) {
+      queueMutation('add', payload);
+      // Don't rollback — keep the optimistic state
+      return;
+    }
     // Rollback: remove the temp item and show error
     state.items = state.items.filter(i => i.rowId !== tempId);
     renderItems();
@@ -848,6 +890,16 @@ async function loadItems(showSuccess = false, {silent=false} = {}) {
     }
     state.remoteVersion = data.version || state.remoteVersion;
     state.lastLoadedAt = new Date().toISOString();
+    
+    // OPTIMIZATION: Persist to localStorage for instant cold-start render
+    try {
+      localStorage.setItem(LIST_CACHE_KEY, JSON.stringify({
+        items: state.items,
+        listId: state.currentListId,
+        cachedAt: Date.now()
+      }));
+    } catch(e) {} // quota exceeded — silently ignore
+
     renderItems();
     renderQuickAddCarousel();
     // Re-render categories if that tab is active
@@ -975,6 +1027,12 @@ async function toggleItem(rowId, purchased) {
     if (data.version) state.remoteVersion = data.version;
     setSyncChip('נשמר', 'connected');
   } catch (error) {
+    // OPTIMIZATION: Queue offline mutation
+    if (!navigator.onLine) {
+      queueMutation('toggle', { rowId, purchased });
+      // Don't rollback — keep the optimistic state
+      return;
+    }
     optimisticSet(rowId, { purchased: previous });
     showMessage(error.message, true);
   }
@@ -1019,6 +1077,13 @@ async function saveEditedItem(event) {
   }
 }
 async function deleteItem(rowId) {
+  // OPTIMIZATION: Clear any pending quantity debounce for this item to prevent stale timer firing
+  if (qtyDebounceTimers.has(rowId)) {
+    clearTimeout(qtyDebounceTimers.get(rowId));
+    qtyDebounceTimers.delete(rowId);
+    qtyOriginalValues.delete(rowId);
+  }
+
   const confirmed = await showConfirmDialog('אישור מחיקה', 'האם למחוק את הפריט?');
   if (!confirmed) return;
   const prev = [...state.items];
@@ -1547,12 +1612,27 @@ function bindEvents() {
   if (els.scanBarcodeBtn) els.scanBarcodeBtn.addEventListener('click', () => {
     els.barcodeScannerDialog.showModal();
     
+    // OPTIMIZATION: Format Hinting + Focus Mode for barcode scanning
     barcodeHtml5QrcodeScanner = new Html5QrcodeScanner(
       "barcode-reader",
       { 
         fps: 30, 
         rememberLastUsedCamera: true,
-        useBarCodeDetectorIfSupported: true
+        // Only decode barcode formats found on Israeli grocery products
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E
+        ],
+        videoConstraints: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          // Continuous autofocus is the single biggest improvement for barcode clarity
+          advanced: [{ focusMode: "continuous" }]
+        }
       },
       /* verbose= */ false);
       
@@ -1687,6 +1767,9 @@ function bindEvents() {
   window.addEventListener('focus', () => {
     silentRefresh();        // also sync instantly when the window regains focus
   });
+  
+  // OPTIMIZATION: Drain offline queue when returning online
+  window.addEventListener('online', drainMutationQueue);
 
   // Event delegation for home lists container (for the more button)
   if (els.homeListsContainer) {
@@ -1759,6 +1842,25 @@ function bindEvents() {
     }
   });
 }
+// OPTIMIZATION: Instant cold-start render by hydrating from cache
+function hydrateFromCache() {
+  try {
+    const raw = localStorage.getItem(LIST_CACHE_KEY);
+    if (!raw) return;
+    const cached = JSON.parse(raw);
+    // Only use cache if it's for the current list and less than 1 hour old
+    if (
+      cached &&
+      cached.listId === state.currentListId &&
+      Date.now() - cached.cachedAt < 3600000
+    ) {
+      state.items = (cached.items || []).map(normalizeItem);
+      renderItems();
+      renderQuickAddCarousel();
+    }
+  } catch(e) {}
+}
+
 function boot() {
   hydrateSettings();
   bindEvents();
@@ -1772,6 +1874,7 @@ function boot() {
       // Ensure we're on the home tab after loading
       switchTab('home');
       if (state.currentListId) {
+        hydrateFromCache();
         return loadItems(false, { silent: true });
       }
     });
@@ -1794,7 +1897,7 @@ if ('serviceWorker' in navigator) {
   
   // Then register the new one
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=10')
+    navigator.serviceWorker.register('./sw.js?v=11')
       .then(registration => {
         console.log('Service Worker registered successfully:', registration.scope);
       })

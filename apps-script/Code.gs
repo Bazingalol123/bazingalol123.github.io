@@ -506,7 +506,13 @@ function findRowByRowId(rowId) {
  * @returns {string}
  */
 function getVersion(sheet) {
-  return String(sheet.getLastRow()) + '-' + new Date().getTime();
+  // OPTIMIZATION: Use Drive file modified time instead of Date.now() to prevent unnecessary full reloads
+  try {
+    const file = DriveApp.getFileById(sheet.getParent().getId());
+    return String(sheet.getLastRow()) + '-' + file.getLastUpdated().getTime();
+  } catch(e) {
+    return String(sheet.getLastRow());
+  }
 }
 
 /**
