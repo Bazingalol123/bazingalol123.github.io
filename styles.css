@@ -575,6 +575,14 @@ button {
 
 .item-meta-row { display: flex; gap: 8px; align-items: center; }
 .meta-pill { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+/* MIGRATION: Responsibility group badge styling */
+.item-responsibility {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid currentColor;
+}
 .item-price { background: var(--success-soft); color: var(--success); padding: 2px 8px; border-radius: var(--radius-pill); font-weight: 700; }
 .item-notes { font-size: 0.85rem; color: var(--text-muted); margin: 6px 0 0; }
 

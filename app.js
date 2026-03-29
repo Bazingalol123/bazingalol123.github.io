@@ -1,420 +1,85 @@
-// OPTIMIZATION: Cache key for localStorage
-const LIST_CACHE_KEY = 'shopping_list_items_cache';
+// Main application controller - ES Module entry point
+import { sb } from './api/supabase.js';
+import { state, LIST_CACHE_KEY } from './store/state.js';
+import { els, initElements } from './store/elements.js';
+import { 
+  formatDate, 
+  formatTimeOnly, 
+  escapeHtml, 
+  showLoading, 
+  hideLoading, 
+  showMessage, 
+  hideMessage,
+  normalizeItem 
+} from './utils/helpers.js';
+import { 
+  currentUser, 
+  sendMagicLink, 
+  signOut, 
+  updateAuthUI, 
+  updateDisplayName, 
+  initAuth 
+} from './services/auth.js';
+import { 
+  loadItems, 
+  silentRefresh,
+  addItemToSupabase, 
+  toggleItem, 
+  updateItemInSupabase, 
+  deleteItemFromSupabase,
+  subscribeToList,
+  handleRealtimeItemChange,
+  qtyDebounceTimers,
+  qtyOriginalValues
+} from './services/items.js';
+import { 
+  loadLists, 
+  createList, 
+  renameList, 
+  duplicateList, 
+  clearCompleted, 
+  deleteList,
+  generateInviteQr,
+  checkInviteToken,
+  loadResponsibilityGroups,
+  createResponsibilityGroup,
+  deleteResponsibilityGroup
+} from './services/lists.js';
+import { 
+  renderItems, 
+  renderLists, 
+  renderCategories, 
+  renderQuickAddCarousel,
+  setQuickAddMode
+} from './components/render.js';
+import { 
+  showConfirmDialog, 
+  showPromptDialog, 
+  updateConnectionChip, 
+  setSyncChip,
+  initFilterToggle,
+  openListActions,
+  renderResponsibilityOptions,
+  renderManageGroupsDialog
+} from './components/ui.js';
 
-const storageKeys = {
-  apiUrl: 'shopping_list_api_url',
-  sharedSecret: 'shopping_list_shared_secret',
-  autoRefresh: 'shopping_list_auto_refresh'
-};
-
-const state = {
-  items: [],
-  filters: { search: '', status: 'all', sort: 'created_desc' },
-  syncTimer: null,
-  lastLoadedAt: null,
-  remoteVersion: '',
-  syncing: false,
-  activeTab: 'home',
-  lists: [],
-  currentListId: null
-};
-
-const els = {
-  themeToggleBtn: document.getElementById('themeToggleBtn'),
-  globalThemeToggle: document.getElementById('globalThemeToggle'),
-  apiUrl: document.getElementById('apiUrl'),
-  sharedSecret: document.getElementById('sharedSecret'),
-  toggleSecretBtn: document.getElementById('toggleSecretBtn'),
-  saveSettingsBtn: document.getElementById('saveSettingsBtn'),
-  testConnectionBtn: document.getElementById('testConnectionBtn'),
-  addItemForm: document.getElementById('addItemForm'),
-  generateQrBtn: document.getElementById('generateQrBtn'),
-  qrCodeContainer: document.getElementById('qrCodeContainer'),
-  qrScannerDialog: document.getElementById('qrScannerDialog'),
-  closeQrScannerBtn: document.getElementById('closeQrScannerBtn'),
-  barcodeScannerDialog: document.getElementById('barcodeScannerDialog'),
-  closeBarcodeScannerBtn: document.getElementById('closeBarcodeScannerBtn'),
-  scanBarcodeBtn: document.getElementById('scanBarcodeBtn'),
-  showQrDialog: document.getElementById('showQrDialog'),
-  showQrContainer: document.getElementById('showQrContainer'),
-  closeShowQrBtn: document.getElementById('closeShowQrBtn'),
-  scanProgressDialog: document.getElementById('scanProgressDialog'),
-  scanProgressIcon: document.getElementById('scanProgressIcon'),
-  scanProgressTitle: document.getElementById('scanProgressTitle'),
-  scanProgressDesc: document.getElementById('scanProgressDesc'),
-  scanProgressSpinner: document.getElementById('scanProgressSpinner'),
-  scanProgressActions: document.getElementById('scanProgressActions'),
-  scanRetakeBtn: document.getElementById('scanRetakeBtn'),
-  scanCloseBtn: document.getElementById('scanCloseBtn'),
-  addDialog: document.getElementById('addDialog'),
-  fabContainer: document.querySelector('.fab-container'),
-  mainFab: document.getElementById('mainFab'),
-  fabMenu: document.getElementById('fabMenu'),
-  fabAddManual: document.getElementById('fabAddManual'),
-  fabScanQr: document.getElementById('fabScanQr'),
-  fabShopMode: document.getElementById('fabShopMode'),
-  closeAddDialogBtn: document.getElementById('closeAddDialogBtn'),
-  searchInput: document.getElementById('searchInput'),
-  statusFilter: document.getElementById('statusFilter'),
-  sortSelect: document.getElementById('sortSelect'),
-  autoRefreshSelect: document.getElementById('autoRefreshSelect'),
-  itemsList: document.getElementById('itemsList'),
-  itemTemplate: document.getElementById('itemTemplate'),
-  loading: document.getElementById('loading'),
-  stats: document.getElementById('stats'),
-  statusMessage: document.getElementById('statusMessage'),
-  editDialog: document.getElementById('editDialog'),
-  editItemForm: document.getElementById('editItemForm'),
-  cancelEditBtn: document.getElementById('cancelEditBtn'),
-  editRowId: document.getElementById('editRowId'),
-  editName: document.getElementById('editName'),
-  editQuantity: document.getElementById('editQuantity'),
-  editCategory: document.getElementById('editCategory'),
-  editNotes: document.getElementById('editNotes'),
-  editPrice: document.getElementById('editPrice'),
-  editImage: document.getElementById('editImage'),
-  metricTotal: document.getElementById('metricTotal'),
-  metricDone: document.getElementById('metricDone'),
-  metricLeft: document.getElementById('metricLeft'),
-  metricPrice: document.getElementById('metricPrice'),
-  connectionChip: document.getElementById('connectionChip'),
-  connectionChipMirror: document.getElementById('connectionChipMirror'),
-  syncChip: document.getElementById('syncChip'),
-  navBtns: [...document.querySelectorAll('.nav-btn')],
-  tabPanels: [...document.querySelectorAll('.tab-panel')],
-  homeListsContainer: document.getElementById('homeListsContainer'),
-  homeAddListBtn: document.getElementById('homeAddListBtn'),
-  searchProductBtn: document.getElementById('searchProductBtn'),
-  currentListName: document.getElementById('currentListName'),
-  // Prompt dialog elements
-  promptDialog: document.getElementById('promptDialog'),
-  promptDialogTitle: document.getElementById('promptDialogTitle'),
-  promptDialogInput: document.getElementById('promptDialogInput'),
-  promptDialogCancel: document.getElementById('promptDialogCancel'),
-  promptDialogOk: document.getElementById('promptDialogOk'),
-  // List actions dialog elements
-  listActionsDialog: document.getElementById('listActionsDialog'),
-  listActionsTitle: document.getElementById('listActionsTitle'),
-  listActionRename: document.getElementById('listActionRename'),
-  listActionDuplicate: document.getElementById('listActionDuplicate'),
-  listActionShareQr: document.getElementById('listActionShareQr'),
-  listActionClear: document.getElementById('listActionClear'),
-  listActionDelete: document.getElementById('listActionDelete'),
-  listActionsClose: document.getElementById('listActionsClose'),
-  // Categories tab elements
-  categoriesList: document.getElementById('categoriesList'),
-  // Filter toggle & collapse
-  filterToggleBtn: document.getElementById('filterToggleBtn'),
-  filtersCollapse: document.getElementById('filtersCollapse'),
-  // Quick-add carousel
-  quickAddSection: document.getElementById('quickAddSection'),
-  quickAddCarousel: document.getElementById('quickAddCarousel'),
-  quickAddTitle: document.getElementById('quickAddTitle'),
-  quickAddModePersonal: document.getElementById('quickAddModePersonal'),
-  quickAddModeCommon: document.getElementById('quickAddModeCommon')
-};
-
-// Quick-add mode: 'personal' | 'common'
-let quickAddMode = 'personal';
-
-// ─── Optimistic-UI / debounce helpers ────────────────────────────────
-/** Guard to prevent overlapping background silentRefresh() calls */
-let isSyncing = false;
-/** Per-item debounce timer IDs for quantity stepper  Map<rowId, timerId> */
-const qtyDebounceTimers = new Map();
-/** Per-item original quantity before the current debounce sequence started  Map<rowId, qty> */
-const qtyOriginalValues = new Map();
-
-// ─── OneSignal Push Notifications ───────────────────────────────────────────
-// IMPORTANT: Replace with your OneSignal App ID from:
-// OneSignal Dashboard → Settings → Keys & IDs → OneSignal App ID
-// Safe to include in client-side code.
+// OneSignal App ID
 const ONESIGNAL_APP_ID = 'bfa7608a-9ec5-49f8-93e9-9f57823db28b';
-// ─────────────────────────────────────────────────────────────────────────────
 
-function showLoading() {
-  const overlay = document.getElementById('loadingOverlay');
-  if (overlay) overlay.hidden = false;
-}
-function hideLoading() {
-  const overlay = document.getElementById('loadingOverlay');
-  if (overlay) overlay.hidden = true;
-}
+// Cached responsibility groups
+let cachedGroups = [];
 
-function showConfirmDialog(title, message) {
-  return new Promise((resolve) => {
-    const dialog = document.getElementById('confirmDialog');
-    const titleEl = document.getElementById('confirmDialogTitle');
-    const messageEl = document.getElementById('confirmDialogMessage');
-    const cancelBtn = document.getElementById('confirmCancel');
-    const okBtn = document.getElementById('confirmOk');
+// List actions context
+let listActionsContext = { listId: null, listName: '' };
 
-    titleEl.textContent = title;
-    messageEl.textContent = message;
-
-    function cleanup() {
-      cancelBtn.removeEventListener('click', onCancel);
-      okBtn.removeEventListener('click', onOk);
-      dialog.removeEventListener('close', onClose);
-      dialog.close();
-    }
-
-    function onCancel() { cleanup(); resolve(false); }
-    function onOk() { cleanup(); resolve(true); }
-    function onClose() { cleanup(); resolve(false); }
-
-    cancelBtn.addEventListener('click', onCancel);
-    okBtn.addEventListener('click', onOk);
-    dialog.addEventListener('close', onClose);
-
-    dialog.showModal();
-  });
-}
-
-/**
- * Reusable prompt dialog — returns Promise<string|null>.
- * Opens #promptDialog as a modal, resolves with input value on OK,
- * resolves with null on Cancel or dialog close.
- * @param {string} title - Dialog title text
- * @param {string} placeholder - Input placeholder text
- * @param {string} defaultValue - Pre-filled input value
- * @returns {Promise<string|null>}
- */
-function showPromptDialog(title, placeholder, defaultValue) {
-  return new Promise((resolve) => {
-    els.promptDialogTitle.textContent = title;
-    els.promptDialogInput.placeholder = placeholder || '';
-    els.promptDialogInput.value = defaultValue || '';
-
-    function cleanup() {
-      els.promptDialogCancel.removeEventListener('click', onCancel);
-      els.promptDialogOk.removeEventListener('click', onOk);
-      els.promptDialog.removeEventListener('close', onClose);
-      els.promptDialog.close();
-    }
-
-    function onCancel() { cleanup(); resolve(null); }
-    function onOk() {
-      const value = els.promptDialogInput.value.trim();
-      cleanup();
-      resolve(value || null);
-    }
-    function onClose() { cleanup(); resolve(null); }
-
-    els.promptDialogCancel.addEventListener('click', onCancel);
-    els.promptDialogOk.addEventListener('click', onOk);
-    els.promptDialog.addEventListener('close', onClose);
-
-    els.promptDialog.showModal();
-    // Focus and select input for quick editing
-    els.promptDialogInput.focus();
-    els.promptDialogInput.select();
-  });
-}
-
-function getConfig() {
-  return {
-    apiUrl: localStorage.getItem(storageKeys.apiUrl) || '',
-    sharedSecret: localStorage.getItem(storageKeys.sharedSecret) || '',
-    autoRefresh: localStorage.getItem(storageKeys.autoRefresh) || '5'
-  };
-}
-function setConfig(apiUrl, sharedSecret, autoRefresh) {
-  localStorage.setItem(storageKeys.apiUrl, apiUrl.trim());
-  localStorage.setItem(storageKeys.sharedSecret, sharedSecret);
-  if (autoRefresh !== undefined) localStorage.setItem(storageKeys.autoRefresh, String(autoRefresh));
-}
-function hydrateSettings() {
-  const config = getConfig();
-  els.apiUrl.value = config.apiUrl;
-  els.sharedSecret.value = config.sharedSecret;
-  els.autoRefreshSelect.value = config.autoRefresh;
-  updateConnectionChip(Boolean(config.apiUrl), false);
-
-  const isDark = localStorage.getItem('shopping_list_dark_mode') === '1';
-  if (isDark) {
-    document.body.classList.add('dark-mode');
-    if (els.themeToggleBtn) els.themeToggleBtn.textContent = 'החלף למצב יום ☀️';
-    if (els.globalThemeToggle) els.globalThemeToggle.textContent = '☀️';
-  }
-}
-function updateConnectionChip(hasUrl, connected) {
-  [els.connectionChip, els.connectionChipMirror].forEach(chip => {
-    chip.classList.remove('connected', 'disconnected');
-    if (!hasUrl) chip.textContent = 'לא מחובר';
-    else if (connected) {
-      chip.textContent = 'מחובר';
-      chip.classList.add('connected');
-    } else {
-      chip.textContent = 'מוגדר';
-      chip.classList.add('disconnected');
-    }
-  });
-}
-function setSyncChip(text, mode='disconnected') {
-  els.syncChip.textContent = text;
-  els.syncChip.classList.remove('connected', 'disconnected');
-  if (mode) els.syncChip.classList.add(mode);
-}
-function showMessage(message, isError = false) {
-  els.statusMessage.textContent = message;
-  els.statusMessage.classList.remove('hidden', 'error');
-  if (isError) els.statusMessage.classList.add('error');
-}
-function hideMessage() { els.statusMessage.classList.add('hidden'); }
-function requireApiUrl() {
-  const apiUrl = (els.apiUrl.value || '').trim();
-  if (!apiUrl) throw new Error('צריך להכניס URL של Apps Script לפני שממשיכים.');
-  return apiUrl;
-}
-
-async function callApi(action, payload = {}, method = 'POST') {
-  const apiUrl = requireApiUrl();
-  const sharedSecret = els.sharedSecret.value || '';
-  if (method === 'GET') {
-    const url = new URL(apiUrl);
-    url.searchParams.set('action', action);
-    if (sharedSecret) url.searchParams.set('secret', sharedSecret);
-    for (const [key, value] of Object.entries(payload)) {
-      if (value !== undefined && value !== null) url.searchParams.set(key, value);
-    }
-    const response = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
-    return handleResponse(response);
-  }
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, secret: sharedSecret, ...payload })
-  });
-  return handleResponse(response);
-}
-async function handleResponse(response) {
-  const text = await response.text();
-  let data;
-  try { data = JSON.parse(text); } catch { throw new Error(`תגובת שרת לא תקינה: ${text.slice(0, 200)}`); }
-  if (!response.ok || data.ok === false) throw new Error(data.error || `Request failed with status ${response.status}`);
-  return data;
-}
-function isUUID(value) {
-  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
-}
-function isBooleanString(value) {
-  const v = String(value).trim().toLowerCase();
-  return v === 'true' || v === 'false';
-}
-function normalizeItem(item) {
-  const purchased = String(item.purchased).toLowerCase() === 'true';
-  // Guard against UUID or boolean values leaking into text fields (Bug 2, Bug 3)
-  const safeStr = (val) => {
-    const s = val || '';
-    if (isUUID(s) || isBooleanString(s)) return '';
-    return s;
-  };
-  return {
-    rowId: String(item.rowId),
-    name: item.name || '',
-    quantity: safeStr(item.quantity),
-    category: safeStr(item.category),
-    notes: safeStr(item.notes),
-    price: item.price || '',
-    image: item.image || '',
-    purchased,
-    createdAt: item.createdAt || '',
-    updatedAt: item.updatedAt || ''
-  };
-}
-function sortItems(items) {
-  const sorted = [...items];
-  switch (state.filters.sort) {
-    case 'created_asc': sorted.sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||'')); break;
-    case 'category_asc': sorted.sort((a,b)=>`${a.category}|${a.name}`.localeCompare(`${b.category}|${b.name}`,'he')); break;
-    case 'name_asc': sorted.sort((a,b)=>a.name.localeCompare(b.name,'he')); break;
-    default: sorted.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
-  }
-  return sorted;
-}
-function getVisibleItems() {
-  const search = state.filters.search.trim().toLowerCase();
-  return sortItems(state.items).filter(item => {
-    const matchesSearch = !search || [item.name,item.quantity,item.category,item.notes].join(' ').toLowerCase().includes(search);
-    const matchesStatus = state.filters.status === 'all' || (state.filters.status==='done' && item.purchased) || (state.filters.status==='active' && !item.purchased);
-    return matchesSearch && matchesStatus;
-  });
-}
-// ─── Filter Toggle (Collapsible) ──────────────────────────────────────
-
-function initFilterToggle() {
-  if (!els.filterToggleBtn || !els.filtersCollapse) return;
-  els.filterToggleBtn.addEventListener('click', () => {
-    const isOpen = els.filtersCollapse.classList.toggle('open');
-    els.filterToggleBtn.setAttribute('aria-expanded', String(isOpen));
-    els.filtersCollapse.setAttribute('aria-hidden', String(!isOpen));
-  });
-}
-
-// ─── Quick-Add Carousel ────────────────────────────────────────────────
-
-/**
- * Hard-coded fallback grocery list (common Israeli supermarket items).
- * Shown in the carousel only when state.items is empty.
- */
-const COMMON_GROCERY_ITEMS = [
-  // ירקות ופירות
-  { name: 'עגבניה',     category: 'ירקות ופירות' },
-  { name: 'מלפפון',     category: 'ירקות ופירות' },
-  { name: 'בצל',        category: 'ירקות ופירות' },
-  { name: 'גזר',        category: 'ירקות ופירות' },
-  { name: 'תפוח',       category: 'ירקות ופירות' },
-  { name: 'בננה',       category: 'ירקות ופירות' },
-  { name: 'לימון',      category: 'ירקות ופירות' },
-  { name: 'פלפל',       category: 'ירקות ופירות' },
-  { name: 'חסה',        category: 'ירקות ופירות' },
-  { name: 'שום',        category: 'ירקות ופירות' },
-  // מוצרי חלב
-  { name: 'חלב',        category: 'מוצרי חלב' },
-  { name: 'גבינה לבנה', category: 'מוצרי חלב' },
-  { name: 'גבינה צהובה',category: 'מוצרי חלב' },
-  { name: 'יוגורט',     category: 'מוצרי חלב' },
-  { name: 'חמאה',       category: 'מוצרי חלב' },
-  { name: 'שמנת',       category: 'מוצרי חלב' },
-  { name: 'ביצים',      category: 'מוצרי חלב' },
-  // לחם ומאפים
-  { name: 'לחם',        category: 'לחם ומאפים' },
-  { name: 'פיתה',       category: 'לחם ומאפים' },
-  { name: 'חלה',        category: 'לחם ומאפים' },
-  // בשר ודגים
-  { name: 'עוף',        category: 'בשר ודגים' },
-  { name: 'בשר טחון',   category: 'בשר ודגים' },
-  { name: 'סלמון',      category: 'בשר ודגים' },
-  // מזון יבש
-  { name: 'אורז',       category: 'מזון יבש' },
-  { name: 'פסטה',       category: 'מזון יבש' },
-  { name: 'קמח',        category: 'מזון יבש' },
-  { name: 'סוכר',       category: 'מזון יבש' },
-  { name: 'שמן זית',    category: 'מזון יבש' },
-  { name: 'רוטב עגבניות',category: 'מזון יבש' },
-  // משקאות
-  { name: 'מים מינרליים',category: 'משקאות' },
-  { name: 'מיץ תפוזים', category: 'משקאות' },
-  { name: 'קפה',        category: 'משקאות' },
-  // ניקיון
-  { name: 'סבון כלים',  category: 'ניקיון' },
-  { name: 'נייר טואלט', category: 'ניקיון' },
-  { name: 'שקיות אשפה', category: 'ניקיון' }
-];
-
-/**
- * Extensive Hebrew grocery dictionary mapped to category names
- */
+// ─── GROCERY DICTIONARY FOR CATEGORY PREDICTION ────────────────────
 const GROCERY_DICTIONARY = {
-  // ירקות ופירות
   'עגבניה': 'ירקות ופירות', 'עגבניות': 'ירקות ופירות', 'שרי': 'ירקות ופירות',
   'מלפפון': 'ירקות ופירות', 'מלפפונים': 'ירקות ופירות',
   'פלפל': 'ירקות ופירות', 'גמבה': 'ירקות ופירות',
   'בצל': 'ירקות ופירות', 'שום': 'ירקות ופירות',
   'תפוח אדמה': 'ירקות ופירות', 'תפוחי אדמה': 'ירקות ופירות', 'תפודים': 'ירקות ופירות',
-  'בטטה': 'ירקות ופירות',
-  'גזר': 'ירקות ופירות',
+  'בטטה': 'ירקות ופירות', 'גזר': 'ירקות ופירות',
   'חסה': 'ירקות ופירות', 'כרוב': 'ירקות ופירות', 'כרובית': 'ירקות ופירות', 'ברוקולי': 'ירקות ופירות',
   'לימון': 'ירקות ופירות', 'לימונים': 'ירקות ופירות',
   'תפוח': 'ירקות ופירות', 'תפוחים': 'ירקות ופירות', 'תפוח עץ': 'ירקות ופירות',
@@ -423,415 +88,138 @@ const GROCERY_DICTIONARY = {
   'אבטיח': 'ירקות ופירות', 'מלון': 'ירקות ופירות', 'ענבים': 'ירקות ופירות',
   'פטריות': 'ירקות ופירות', 'קישוא': 'ירקות ופירות', 'חציל': 'ירקות ופירות',
   'פטרוזיליה': 'ירקות ופירות', 'כוסברה': 'ירקות ופירות', 'שמיר': 'ירקות ופירות', 'נענע': 'ירקות ופירות',
-  
-  // מוצרי חלב
   'חלב': 'מוצרי חלב', 'חלב שיבולת שועל': 'מוצרי חלב', 'חלב סויה': 'מוצרי חלב', 'חלב שקדים': 'מוצרי חלב',
   'גבינה': 'מוצרי חלב', 'גבינה צהובה': 'מוצרי חלב', 'גלבוע': 'מוצרי חלב', 'עמק': 'מוצרי חלב',
-  'גבינה לבנה': 'מוצרי חלב', 'סקי': 'מוצרי חלב',
-  'קוטג': 'מוצרי חלב', 'קוטג\'': 'מוצרי חלב',
+  'גבינה לבנה': 'מוצרי חלב', 'סקי': 'מוצרי חלב', 'קוטג': 'מוצרי חלב', 'קוטג\'': 'מוצרי חלב',
   'יוגורט': 'מוצרי חלב', 'דנונה': 'מוצרי חלב', 'מולר': 'מוצרי חלב',
   'שמנת': 'מוצרי חלב', 'שמנת לבישול': 'מוצרי חלב', 'שמנת מתוקה': 'מוצרי חלב', 'שמנת חמוצה': 'מוצרי חלב',
-  'חמאה': 'מוצרי חלב', 'מרגרינה': 'מוצרי חלב',
-  'ביצים': 'מוצרי חלב', 'ביצה': 'מוצרי חלב',
+  'חמאה': 'מוצרי חלב', 'מרגרינה': 'מוצרי חלב', 'ביצים': 'מוצרי חלב', 'ביצה': 'מוצרי חלב',
   'מעדן': 'מוצרי חלב', 'מילקי': 'מוצרי חלב', 'קרלו': 'מוצרי חלב',
   'גבינת עזים': 'מוצרי חלב', 'גבינת כבשים': 'מוצרי חלב', 'בולגרית': 'מוצרי חלב', 'צפתית': 'מוצרי חלב',
-
-  // בשר ודגים
   'עוף': 'בשר ודגים', 'חזה עוף': 'בשר ודגים', 'שניצל': 'בשר ודגים', 'כרעיים': 'בשר ודגים', 'שוקיים': 'בשר ודגים',
   'בשר': 'בשר ודגים', 'בשר טחון': 'בשר ודגים', 'בקר': 'בשר ודגים', 'אסאדו': 'בשר ודגים',
   'דג': 'בשר ודגים', 'סלמון': 'בשר ודגים', 'אמנון': 'בשר ודגים', 'דניס': 'בשר ודגים',
   'נקניקיות': 'בשר ודגים', 'נקניק': 'בשר ודגים', 'פסטרמה': 'בשר ודגים', 'סלמי': 'בשר ודגים',
-  
-  // לחם ומאפים
   'לחם': 'לחם ומאפים', 'לחם אחיד': 'לחם ומאפים', 'לחם מלא': 'לחם ומאפים',
-  'פיתה': 'לחם ומאפים', 'פיתות': 'לחם ומאפים',
-  'לחמניה': 'לחם ומאפים', 'לחמניות': 'לחם ומאפים',
+  'פיתה': 'לחם ומאפים', 'פיתות': 'לחם ומאפים', 'לחמניה': 'לחם ומאפים', 'לחמניות': 'לחם ומאפים',
   'חלה': 'לחם ומאפים', 'בייגל': 'לחם ומאפים', 'בורקס': 'לחם ומאפים',
-  
-  // מזון יבש
   'אורז': 'מזון יבש', 'פסטה': 'מזון יבש', 'ספגטי': 'מזון יבש', 'מקרוני': 'מזון יבש', 'פתיתים': 'מזון יבש',
-  'קמח': 'מזון יבש', 'קמח תופח': 'מזון יבש',
-  'סוכר': 'מזון יבש', 'מלח': 'מזון יבש',
+  'קמח': 'מזון יבש', 'קמח תופח': 'מזון יבש', 'סוכר': 'מזון יבש', 'מלח': 'מזון יבש',
   'שמן': 'מזון יבש', 'שמן זית': 'מזון יבש', 'שמן קנולה': 'מזון יבש',
   'קטשופ': 'מזון יבש', 'מיונז': 'מזון יבש', 'חרדל': 'מזון יבש',
   'טחינה': 'מזון יבש', 'דבש': 'מזון יבש', 'סילאן': 'מזון יבש',
   'תבלין': 'מזון יבש', 'פלפל שחור': 'מזון יבש', 'פפריקה': 'מזון יבש', 'כורכום': 'מזון יבש', 'כמון': 'מזון יבש',
   'שקדי מרק': 'מזון יבש', 'אטריות': 'מזון יבש',
   'קורנפלקס': 'מזון יבש', 'דגני בוקר': 'מזון יבש', 'שיבולת שועל': 'מזון יבש',
-  
-  // שימורים
-  'טונה': 'שימורים', 'תירס': 'שימורים', 'אפונה': 'שימורים', 'רסק עגבניות': 'שימורים', 'מלפפון חמוץ': 'שימורים', 'זיתים': 'שימורים', 'שעועית': 'שימורים',
-
-  // משקאות
+  'טונה': 'שימורים', 'תירס': 'שימורים', 'אפונה': 'שימורים', 'רסק עגבניות': 'שימורים', 
+  'מלפפון חמוץ': 'שימורים', 'זיתים': 'שימורים', 'שעועית': 'שימורים',
   'מים': 'משקאות', 'מים מינרליים': 'משקאות', 'שישיית מים': 'משקאות',
   'קוקה קולה': 'משקאות', 'קולה': 'משקאות', 'ספרייט': 'משקאות', 'פנטה': 'משקאות',
   'מיץ': 'משקאות', 'מיץ תפוזים': 'משקאות', 'מיץ תפוחים': 'משקאות',
   'קפה': 'משקאות', 'קפה שחור': 'משקאות', 'נס קפה': 'משקאות', 'קפסולות': 'משקאות',
-  'תה': 'משקאות', 'תיון': 'משקאות', 'תיונים': 'משקאות',
-  'בירה': 'משקאות', 'יין': 'משקאות',
-  
-  // חטיפים ומתוקים
-  'במבה': 'חטיפים ומתוקים', 'ביסלי': 'חטיפים ומתוקים', 'תפוצ\'יפס': 'חטיפים ומתוקים', 'דוריטוס': 'חטיפים ומתוקים', 'אפרופו': 'חטיפים ומתוקים',
+  'תה': 'משקאות', 'תיון': 'משקאות', 'תיונים': 'משקאות', 'בירה': 'משקאות', 'יין': 'משקאות',
+  'במבה': 'חטיפים ומתוקים', 'ביסלי': 'חטיפים ומתוקים', 'תפוצ\'יפס': 'חטיפים ומתוקים', 
+  'דוריטוס': 'חטיפים ומתוקים', 'אפרופו': 'חטיפים ומתוקים',
   'שוקולד': 'חטיפים ומתוקים', 'פרה': 'חטיפים ומתוקים', 'פסק זמן': 'חטיפים ומתוקים', 'מקופלת': 'חטיפים ומתוקים',
   'עוגיות': 'חטיפים ומתוקים', 'וופלים': 'חטיפים ומתוקים', 'בפלות': 'חטיפים ומתוקים',
   'סוכריות': 'חטיפים ומתוקים', 'מסטיק': 'חטיפים ומתוקים',
   'גרעינים': 'חטיפים ומתוקים', 'בוטנים': 'חטיפים ומתוקים', 'אגוזים': 'חטיפים ומתוקים', 'שקדים': 'חטיפים ומתוקים',
-  
-  // קפואים
-  'צ\'יפס': 'קפואים', 'פיצה': 'קפואים', 'גלידה': 'קפואים', 'ארטיק': 'קפואים', 'קרח': 'קפואים', 'בורקס קפוא': 'קפואים', 'מלאווח': 'קפואים', 'ג\'חנון': 'קפואים',
-  
-  // ניקיון
+  'צ\'יפס': 'קפואים', 'פיצה': 'קפואים', 'גלידה': 'קפואים', 'ארטיק': 'קפואים', 'קרח': 'קפואים', 
+  'בורקס קפוא': 'קפואים', 'מלאווח': 'קפואים', 'ג\'חנון': 'קפואים',
   'סבון כלים': 'ניקיון', 'נוזל כלים': 'ניקיון', 'פיירי': 'ניקיון',
   'אקונומיקה': 'ניקיון', 'נוזל רצפות': 'ניקיון', 'מסיר שומנים': 'ניקיון',
-  'נייר טואלט': 'ניקיון', 'נייר סופג': 'ניקיון',
-  'מגבונים': 'ניקיון', 'שקיות זבל': 'ניקיון', 'שקיות אשפה': 'ניקיון',
+  'נייר טואלט': 'ניקיון', 'נייר סופג': 'ניקיון', 'מגבונים': 'ניקיון', 
+  'שקיות זבל': 'ניקיון', 'שקיות אשפה': 'ניקיון',
   'ספוג': 'ניקיון', 'סקוצ': 'ניקיון', 'סמרטוט': 'ניקיון',
   'אבקת כביסה': 'ניקיון', 'מרכך כביסה': 'ניקיון', 'ג\'ל כביסה': 'ניקיון',
-  
-  // פארם ותינוקות
   'שמפו': 'פארם ותינוקות', 'מרכך': 'פארם ותינוקות', 'סבון נוזלי': 'פארם ותינוקות', 'סבון גוף': 'פארם ותינוקות',
   'משחת שיניים': 'פארם ותינוקות', 'מברשת שיניים': 'פארם ותינוקות',
   'דאודורנט': 'פארם ותינוקות', 'סכיני גילוח': 'פארם ותינוקות', 'קצף גילוח': 'פארם ותינוקות',
   'טיטולים': 'פארם ותינוקות', 'חיתולים': 'פארם ותינוקות', 'האגיס': 'פארם ותינוקות', 'פמפרס': 'פארם ותינוקות',
   'מטרנה': 'פארם ותינוקות', 'סימילאק': 'פארם ותינוקות', 'נוטרילון': 'פארם ותינוקות',
   'תחבושות': 'פארם ותינוקות', 'טמפונים': 'פארם ותינוקות',
-  
-  // חיות מחמד
   'אוכל לכלבים': 'חיות מחמד', 'אוכל לחתולים': 'חיות מחמד', 'חול לחתולים': 'חיות מחמד'
 };
 
 /**
- * Predict category based on item name (hybrid: history then dictionary)
+ * Predict category based on item name
  */
 function predictCategory(name) {
   if (!name) return '';
   const cleanName = name.trim().toLowerCase();
   
-  // 1. Check history first (learn from user)
-  const historyMatch = state.items.find(item => item.name.trim().toLowerCase() === cleanName && item.category);
-  if (historyMatch) {
-    return historyMatch.category;
-  }
+  // Check history first
+  const historyMatch = state.items.find(item => 
+    item.name.trim().toLowerCase() === cleanName && item.category
+  );
+  if (historyMatch) return historyMatch.category;
   
-  // 2. Check predefined dictionary
-  if (GROCERY_DICTIONARY[cleanName]) {
-    return GROCERY_DICTIONARY[cleanName];
-  }
+  // Check dictionary
+  if (GROCERY_DICTIONARY[cleanName]) return GROCERY_DICTIONARY[cleanName];
   
-  // Try partial match for dictionary (if they type "חלב עמיד" and "חלב" is in dict)
+  // Try partial match
   const words = cleanName.split(' ');
   for (const word of words) {
-    if (GROCERY_DICTIONARY[word]) {
-      return GROCERY_DICTIONARY[word];
-    }
+    if (GROCERY_DICTIONARY[word]) return GROCERY_DICTIONARY[word];
   }
   
   return '';
 }
 
-/**
- * Build frequency map of item names from state.items.
- * Items that have been purchased (bought) at least once rank higher.
- * Returns array sorted by frequency desc, then alpha.
- */
-function getQuickAddItems() {
-  const freq = {};
-  state.items.forEach(item => {
-    const key = item.name.trim();
-    if (!key) return;
-    if (!freq[key]) freq[key] = { name: key, count: 0, category: item.category || '' };
-    freq[key].count += 1;
-    if (item.purchased) freq[key].count += 1; // boost purchased items
+// ─── HELPER FUNCTIONS ────────────────────────────────────────────
+
+function optimisticSet(rowId, patch) {
+  state.items = state.items.map(item => 
+    item.rowId === rowId 
+      ? { ...item, ...patch, updatedAt: new Date().toISOString() } 
+      : item
+  );
+  reRenderAll();
+}
+
+function reRenderAll() {
+  renderItems(handleToggleItem, openEditDialog, handleDeleteItem, handleUpdateItemQuantity);
+  renderQuickAddCarousel(handleQuickAddItem);
+  if (state.activeTab === 'categories') renderCategories();
+}
+
+function switchTab(tab) {
+  if (!tab) return;
+  state.activeTab = tab;
+  els.navBtns.forEach(btn => {
+    const btnTab = btn.dataset.targetTab || btn.dataset.tab;
+    btn.classList.toggle('active', btnTab === tab);
   });
-  return Object.values(freq)
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'he'))
-    .slice(0, 20);
-}
-
-function renderQuickAddCarousel() {
-  if (!els.quickAddSection || !els.quickAddCarousel) return;
-
-  // Determine effective mode: default to 'common' if no personal items yet
-  if (quickAddMode === 'personal' && !state.items.length) {
-    quickAddMode = 'common';
-  }
-
-  const isCommon = quickAddMode === 'common';
-  const items = isCommon ? COMMON_GROCERY_ITEMS : getQuickAddItems();
-
-  if (!items.length) {
-    els.quickAddSection.hidden = true;
-    return;
-  }
-  els.quickAddSection.hidden = false;
-
-  // Update toggle button active states
-  if (els.quickAddModePersonal && els.quickAddModeCommon) {
-    els.quickAddModePersonal.classList.toggle('active', !isCommon);
-    els.quickAddModeCommon.classList.toggle('active', isCommon);
-  }
-
-  // Update section title if element exists
-  if (els.quickAddTitle) {
-    els.quickAddTitle.textContent = isCommon ? 'נפוצים' : 'הרגלי';
-  }
-
-  els.quickAddCarousel.innerHTML = '';
-  items.forEach(({ name, category }) => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = isCommon ? 'quick-add-chip fallback' : 'quick-add-chip';
-    chip.setAttribute('role', 'listitem');
-    chip.setAttribute('title', `הוסף: ${name}`);
-    chip.innerHTML = `<span class="quick-add-chip-name">${escapeHtml(name)}</span>${category ? `<span class="quick-add-chip-cat">${escapeHtml(category)}</span>` : ''}`;
-    chip.addEventListener('click', () => quickAddItem(name, category));
-    els.quickAddCarousel.appendChild(chip);
+  els.tabPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.tab === tab));
+  document.querySelectorAll('.nav-btn[role="tab"]').forEach(btn => {
+    btn.setAttribute('aria-selected', btn.dataset.targetTab === tab ? 'true' : 'false');
   });
+  if (tab === 'categories') renderCategories();
 }
 
-// OPTIMIZATION: Offline Mutation Queue for resilience
-async function drainMutationQueue() {
-  let queue = [];
+// ─── ACTION HANDLERS ─────────────────────────────────────────────
+
+async function handleToggleItem(rowId, purchased) {
+  const previous = state.items.find(i => i.rowId === rowId)?.purchased;
+  optimisticSet(rowId, { purchased });
   try {
-    queue = JSON.parse(localStorage.getItem('mutation_queue') || '[]');
-  } catch(e) { return; }
-  if (!queue.length) return;
-
-  localStorage.removeItem('mutation_queue');
-  setSyncChip('מסנכרן שינויים שמורים...', 'disconnected');
-
-  for (const { action, payload } of queue) {
-    try {
-      await callApi(action, payload);
-    } catch(e) {
-      // If it fails again, re-queue it
-      const current = JSON.parse(localStorage.getItem('mutation_queue') || '[]');
-      current.push({ action, payload, timestamp: Date.now() });
-      localStorage.setItem('mutation_queue', JSON.stringify(current));
-    }
-  }
-  await silentRefresh();
-}
-
-function queueMutation(action, payload) {
-  try {
-    const queue = JSON.parse(localStorage.getItem('mutation_queue') || '[]');
-    queue.push({ action, payload, timestamp: Date.now() });
-    localStorage.setItem('mutation_queue', JSON.stringify(queue));
-    showMessage('אין חיבור — השינוי ישמר ויסונכרן כשהחיבור יחזור.');
-  } catch(e) {}
-}
-
-async function quickAddItem(name, category) {
-  if (!state.currentListId) return;
-
-  // ── Optimistic add: appear instantly ──────────────────────────────
-  const tempId = 'temp-' + Date.now();
-  const tempItem = normalizeItem({
-    rowId: tempId,
-    name,
-    quantity: '1',
-    category: category || '',
-    notes: '',
-    price: '',
-    image: '',
-    purchased: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  });
-  state.items = [tempItem, ...state.items];
-  renderItems();
-  renderQuickAddCarousel();
-  showMessage(`"${name}" נוסף לרשימה.`);
-  setSyncChip('מוסיף...', 'disconnected');
-
-  // ── Background API call ───────────────────────────────────────────
-  const payload = {
-    listId: state.currentListId,
-    name,
-    quantity: '1',
-    category: category || '',
-    notes: '',
-    price: '',
-    image: ''
-  };
-  try {
-    await callApi('add', payload);
-    setSyncChip('נשמר', 'connected');
-    // Background sync to replace temp rowId with the real server rowId
-    silentRefresh();
+    await toggleItem(rowId, purchased);
   } catch (error) {
-    // OPTIMIZATION: Queue offline mutation
-    if (!navigator.onLine) {
-      queueMutation('add', payload);
-      // Don't rollback — keep the optimistic state
-      return;
-    }
-    // Rollback: remove the temp item and show error
-    state.items = state.items.filter(i => i.rowId !== tempId);
-    renderItems();
-    renderQuickAddCarousel();
+    optimisticSet(rowId, { purchased: previous });
     showMessage(error.message, true);
-    setSyncChip('שגיאת סנכרון', 'disconnected');
   }
 }
 
-function renderItems() {
-  const items = getVisibleItems();
-  els.itemsList.innerHTML = '';
-  if (!items.length) {
-    const empty = document.createElement('li');
-    empty.className = 'empty-state';
-    empty.textContent = 'אין פריטים להצגה.';
-    els.itemsList.appendChild(empty);
-  }
-  for (const item of items) {
-    const node = els.itemTemplate.content.firstElementChild.cloneNode(true);
-    node.dataset.rowId = item.rowId;
-    if (item.purchased) node.classList.add('done');
-    const checkbox = node.querySelector('.toggle-item');
-    checkbox.checked = item.purchased;
-    checkbox.addEventListener('change', () => toggleItem(item.rowId, checkbox.checked));
-
-    // Item name — click opens edit modal
-    const nameEl = node.querySelector('.item-name');
-    nameEl.textContent = item.name;
-    nameEl.style.cursor = 'pointer';
-    nameEl.addEventListener('click', () => openEditDialog(item));
-
-    const priceEl = node.querySelector('.item-price');
-    if (item.price) {
-      priceEl.textContent = `₪${item.price}`;
-      priceEl.style.display = 'inline-flex';
-    } else {
-      priceEl.style.display = 'none';
-    }
-    const imageEl = node.querySelector('.item-image');
-    if (item.image) {
-      imageEl.src = item.image;
-      imageEl.style.display = 'block';
-    } else {
-      imageEl.style.display = 'none';
-    }
-    const notesEl = node.querySelector('.item-notes');
-    if (item.notes) notesEl.textContent = item.notes; else notesEl.remove();
-    const categoryEl = node.querySelector('.item-category');
-    if (item.category) categoryEl.textContent = item.category; else categoryEl.remove();
-    node.querySelector('.item-date').textContent = item.updatedAt ? `עודכן: ${formatDate(item.updatedAt)}` : '';
-    node.querySelector('.delete-btn').addEventListener('click', () => deleteItem(item.rowId));
-
-    // Inline quantity stepper
-    const stepperSection = node.querySelector('.item-stepper');
-    const stepperQty = node.querySelector('.stepper-qty');
-    const decBtn = node.querySelector('.stepper-dec');
-    const incBtn = node.querySelector('.stepper-inc');
-
-    // Parse numeric quantity or show raw string
-    const rawQty = item.quantity || '1';
-    const numQty = parseFloat(rawQty);
-    const isNumeric = !isNaN(numQty);
-    stepperQty.textContent = isNumeric ? String(numQty) : rawQty;
-
-    if (item.purchased) {
-      // Greyed out for done items
-      stepperSection.classList.add('stepper-done');
-      decBtn.disabled = true;
-      incBtn.disabled = true;
-    } else {
-      incBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const current = parseFloat(stepperQty.textContent);
-        const newQty = isNaN(current) ? 2 : current + 1;
-        stepperQty.textContent = String(newQty);
-        await updateItemQuantity(item.rowId, String(newQty));
-      });
-      decBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const current = parseFloat(stepperQty.textContent);
-        const newQty = isNaN(current) ? 0 : current - 1;
-        if (newQty <= 0) {
-          const confirmed = await showConfirmDialog('הסרת פריט', `להסיר את "${item.name}" מהרשימה?`);
-          if (confirmed) await deleteItem(item.rowId);
-        } else {
-          stepperQty.textContent = String(newQty);
-          await updateItemQuantity(item.rowId, String(newQty));
-        }
-      });
-    }
-
-    // Swipe Actions
-    const itemFront = node.querySelector('.item-front');
-    if (itemFront) {
-      let startX = 0;
-      let currentX = 0;
-      itemFront.addEventListener('touchstart', (e) => {
-        if (e.target.closest('button, input, select')) return;
-        startX = e.touches[0].clientX;
-        node.classList.add('swiping');
-      }, {passive: true});
-      itemFront.addEventListener('touchmove', (e) => {
-        if (!node.classList.contains('swiping')) return;
-        currentX = e.touches[0].clientX - startX;
-        // Limit swipe distance
-        if (currentX > 100) currentX = 100;
-        if (currentX < -100) currentX = -100;
-        itemFront.style.transform = `translateX(${currentX}px)`;
-        const ratio = Math.min(Math.abs(currentX) / 80, 1);
-        node.style.setProperty('--swipe-ratio', ratio);
-      }, {passive: true});
-      itemFront.addEventListener('touchend', () => {
-        if (!node.classList.contains('swiping')) return;
-        node.classList.remove('swiping');
-        itemFront.style.transform = '';
-        node.style.setProperty('--swipe-ratio', '0');
-        if (currentX > 80) {
-          deleteItem(item.rowId);
-        } else if (currentX < -80) {
-          toggleItem(item.rowId, !item.purchased);
-        }
-        currentX = 0;
-      });
-    }
-
-    els.itemsList.appendChild(node);
-  }
-  const doneCount = state.items.filter(item => item.purchased).length;
-  const leftCount = state.items.length - doneCount;
-  const refreshText = state.lastLoadedAt ? ` • נטען ${formatTimeOnly(state.lastLoadedAt)}` : '';
-  els.stats.textContent = `${state.items.length} פריטים • ${doneCount} נקנו • ${leftCount} נשארו${refreshText}`;
-  els.metricTotal.textContent = state.items.length;
-  els.metricDone.textContent = doneCount;
-  els.metricLeft.textContent = leftCount;
-
-  // Calculate total price of unpurchased items
-  const totalPrice = state.items
-    .filter(i => !i.purchased && i.price)
-    .reduce((sum, i) => sum + (parseFloat(i.price) || 0), 0);
-  if (els.metricPrice) {
-    els.metricPrice.textContent = `₪${totalPrice.toFixed(2)}`;
-  }
-}
-function formatDate(value) {
-  const date = new Date(value); if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('he-IL',{dateStyle:'short',timeStyle:'short'}).format(date);
-}
-function formatTimeOnly(value) {
-  const date = new Date(value); if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat('he-IL',{timeStyle:'short'}).format(date);
-}
-async function updateItemQuantity(rowId, newQty) {
+async function handleUpdateItemQuantity(rowId, newQty) {
   const item = state.items.find(i => i.rowId === rowId);
   if (!item) return;
 
-  // Record the pre-sequence original quantity only on the first tap
   if (!qtyDebounceTimers.has(rowId)) {
     qtyOriginalValues.set(rowId, item.quantity);
   }
 
-  // Optimistic update: reflect change immediately in UI
   optimisticSet(rowId, { quantity: newQty });
 
-  // Debounce: cancel any pending API call for this item and restart timer
   clearTimeout(qtyDebounceTimers.get(rowId));
 
   const timer = setTimeout(async () => {
@@ -853,11 +241,9 @@ async function updateItemQuantity(rowId, newQty) {
         price: currentItem.price,
         image: currentItem.image
       };
-      const data = await callApi('update', patch);
-      if (data.version) state.remoteVersion = data.version;
+      await updateItemInSupabase(patch);
       setSyncChip('נשמר', 'connected');
     } catch (error) {
-      // Rollback to value before the entire debounce sequence
       optimisticSet(rowId, { quantity: originalQty });
       showMessage(error.message, true);
     }
@@ -866,188 +252,112 @@ async function updateItemQuantity(rowId, newQty) {
   qtyDebounceTimers.set(rowId, timer);
 }
 
-async function loadItems(showSuccess = false, {silent=false} = {}) {
-  // Bug 1 fix: only show spinner for non-silent (user-initiated) loads
-  if (!silent) {
-    els.loading.classList.remove('hidden');
-    showLoading();
-  }
-  try {
-    const data = await callApi('list', { listId: state.currentListId }, 'GET');
-    const newItems = (data.items || []).map(normalizeItem);
-    if (silent) {
-      // Always trust server state on background refresh.
-      // The previous "preserve local purchased" logic was the root cause of the
-      // cross-device sync bug: when Device A marks an item purchased and
-      // Device B's poller fetches the updated list, the merge was discarding
-      // the remote purchased=true and keeping the local purchased=false,
-      // so the checkmark never appeared on Device B.
-      // toggleItem() already awaits the API before silentRefresh() is called,
-      // so there is no in-flight optimistic state that needs protection here.
-      state.items = newItems;
-    } else {
-      state.items = newItems;
-    }
-    state.remoteVersion = data.version || state.remoteVersion;
-    state.lastLoadedAt = new Date().toISOString();
-    
-    // OPTIMIZATION: Persist to localStorage for instant cold-start render
-    try {
-      localStorage.setItem(LIST_CACHE_KEY, JSON.stringify({
-        items: state.items,
-        listId: state.currentListId,
-        cachedAt: Date.now()
-      }));
-    } catch(e) {} // quota exceeded — silently ignore
-
-    renderItems();
-    renderQuickAddCarousel();
-    // Re-render categories if that tab is active
-    if (state.activeTab === 'categories') renderCategories();
-    hideMessage();
-    updateConnectionChip(true, true);
-    setSyncChip('מסונכרן', 'connected');
-    if (showSuccess) showMessage('הרשימה נטענה בהצלחה.');
-  } catch (error) {
-    updateConnectionChip(Boolean((els.apiUrl.value || '').trim()), false);
-    setSyncChip('שגיאת סנכרון', 'disconnected');
-    showMessage(error.message, true);
-  } finally {
-    // Bug 1 fix: only hide the visible spinner elements when not in silent mode
-    if (!silent) {
-      hideLoading();
-    }
-    els.loading.classList.add('hidden');
-  }
-}
-async function checkVersionAndSync() {
-  if (document.hidden || !(els.apiUrl.value || '').trim() || state.syncing) return;
-  state.syncing = true;
-  try {
-    const data = await callApi('version', {}, 'GET');
-    if (data.version && state.remoteVersion && data.version !== state.remoteVersion) {
-      setSyncChip('נמצא שינוי', 'disconnected');
-      await loadItems(false, {silent:true});
-    } else {
-      state.remoteVersion = data.version || state.remoteVersion;
-      setSyncChip('אין שינוי חדש', 'connected');
-    }
-  } catch {
-    setSyncChip('בדיקת שינוי נכשלה', 'disconnected');
-  } finally {
-    state.syncing = false;
-  }
-}
-function optimisticSet(rowId, patch) {
-  state.items = state.items.map(item => item.rowId === rowId ? {...item, ...patch, updatedAt:new Date().toISOString()} : item);
-  renderItems();
-}
-
-/**
- * silentRefresh — reconcile state.items with server without showing any
- * loading spinner or blocking the UI.  Guarded by `isSyncing` so
- * overlapping background refreshes cannot pile up.
- */
-async function silentRefresh() {
-  if (isSyncing) return;
-  isSyncing = true;
-  try {
-    await loadItems(false, { silent: true });
-  } finally {
-    isSyncing = false;
-  }
-}
-
-async function addItem(event) {
+async function handleAddItem(event) {
   event.preventDefault();
-  const form = new FormData(els.addItemForm);
-  const name     = form.get('name')     || '';
-  const quantity = form.get('quantity') || '1';
-  const category = form.get('category') || '';
-  const notes    = form.get('notes')    || '';
-  const price    = form.get('price')    || '';
-  const image    = form.get('image')    || '';
+  if (!currentUser) {
+    showMessage('יש להתחבר קודם.', true);
+    return;
+  }
 
-  // ── Optimistic add: appear instantly ──────────────────────────────
+  const form = new FormData(els.addItemForm);
+  const payload = {
+    name: form.get('name') || '',
+    quantity: form.get('quantity') || '1',
+    category: form.get('category') || '',
+    notes: form.get('notes') || '',
+    price: form.get('price') || '',
+    image: form.get('image') || ''
+  };
+
   const tempId = 'temp-' + Date.now();
   const tempItem = normalizeItem({
+    ...payload,
     rowId: tempId,
-    name,
-    quantity,
-    category,
-    notes,
-    price,
-    image,
     purchased: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
+  
   state.items = [tempItem, ...state.items];
-  renderItems();
-  renderQuickAddCarousel();
+  reRenderAll();
   els.addItemForm.reset();
   showMessage('הפריט נוסף לרשימה.');
   setSyncChip('מוסיף...', 'disconnected');
 
   const submitBtn = els.addItemForm.querySelector('button[type="submit"]');
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'שומר...'; }
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'שומר...';
+  }
 
-  // ── Background API call ───────────────────────────────────────────
-  const payload = {
-    listId: state.currentListId,
-    name,
-    quantity,
-    category,
-    notes,
-    price,
-    image
-  };
   try {
-    await callApi('add', payload);
+    await addItemToSupabase(payload);
     setSyncChip('נשמר', 'connected');
-    // Background sync to swap temp rowId for the real server rowId
     silentRefresh();
   } catch (error) {
-    // Rollback: remove the temp item
     state.items = state.items.filter(i => i.rowId !== tempId);
-    renderItems();
-    renderQuickAddCarousel();
+    reRenderAll();
     showMessage(error.message, true);
     setSyncChip('שגיאת סנכרון', 'disconnected');
   } finally {
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'הוסף לרשימה'; }
-  }
-}
-async function toggleItem(rowId, purchased) {
-  const previous = state.items.find(i=>i.rowId===rowId)?.purchased;
-  optimisticSet(rowId, { purchased });
-  try {
-    setSyncChip('שומר...', 'disconnected');
-    const data = await callApi('toggle', { rowId, purchased });
-    if (data.version) state.remoteVersion = data.version;
-    setSyncChip('נשמר', 'connected');
-  } catch (error) {
-    // OPTIMIZATION: Queue offline mutation
-    if (!navigator.onLine) {
-      queueMutation('toggle', { rowId, purchased });
-      // Don't rollback — keep the optimistic state
-      return;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'הוסף לרשימה';
     }
-    optimisticSet(rowId, { purchased: previous });
-    showMessage(error.message, true);
   }
 }
+
+async function handleQuickAddItem(name, category) {
+  if (!state.currentListId || !currentUser) return;
+
+  const tempId = 'temp-' + Date.now();
+  const tempItem = normalizeItem({
+    rowId: tempId,
+    name,
+    quantity: '1',
+    category: category || '',
+    notes: '',
+    price: '',
+    image: '',
+    purchased: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  
+  state.items = [tempItem, ...state.items];
+  reRenderAll();
+  showMessage(`"${name}" נוסף לרשימה.`);
+  setSyncChip('מוסיף...', 'disconnected');
+
+  try {
+    await addItemToSupabase({ name, quantity: '1', category: category || '', notes: '', price: '', image: '' });
+    setSyncChip('נשמר', 'connected');
+    silentRefresh();
+  } catch (error) {
+    state.items = state.items.filter(i => i.rowId !== tempId);
+    reRenderAll();
+    showMessage(error.message, true);
+    setSyncChip('שגיאת סנכרון', 'disconnected');
+  }
+}
+
 function openEditDialog(item) {
-  els.editRowId.value = item.rowId; 
-  els.editName.value = item.name; 
-  els.editQuantity.value = item.quantity; 
-  els.editCategory.value = item.category; 
-  els.editNotes.value = item.notes; 
+  els.editRowId.value = item.rowId;
+  els.editName.value = item.name;
+  els.editQuantity.value = item.quantity;
+  els.editCategory.value = item.category;
+  els.editNotes.value = item.notes;
   els.editPrice.value = item.price;
   els.editImage.value = item.image;
+  
+  const editRespGroup = document.getElementById('editResponsibleGroup');
+  if (editRespGroup) {
+    editRespGroup.value = item.responsibleGroup?.id || '';
+  }
   els.editDialog.showModal();
 }
-async function saveEditedItem(event) {
+
+async function handleSaveEditedItem(event) {
   event.preventDefault();
   const patch = {
     rowId: els.editRowId.value,
@@ -1058,14 +368,19 @@ async function saveEditedItem(event) {
     price: els.editPrice.value,
     image: els.editImage.value
   };
-  const prev = state.items.find(i=>i.rowId===patch.rowId);
+  
+  const prev = state.items.find(i => i.rowId === patch.rowId);
   optimisticSet(patch.rowId, patch);
+  
   const submitBtn = els.editItemForm.querySelector('button[type="submit"]');
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'שומר...'; }
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'שומר...';
+  }
   showLoading();
+  
   try {
-    const data = await callApi('update', patch);
-    if (data.version) state.remoteVersion = data.version;
+    await updateItemInSupabase(patch);
     els.editDialog.close();
     setSyncChip('נשמר', 'connected');
   } catch (error) {
@@ -1073,11 +388,14 @@ async function saveEditedItem(event) {
     showMessage(error.message, true);
   } finally {
     hideLoading();
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'שמור'; }
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'שמור';
+    }
   }
 }
-async function deleteItem(rowId) {
-  // OPTIMIZATION: Clear any pending quantity debounce for this item to prevent stale timer firing
+
+async function handleDeleteItem(rowId) {
   if (qtyDebounceTimers.has(rowId)) {
     clearTimeout(qtyDebounceTimers.get(rowId));
     qtyDebounceTimers.delete(rowId);
@@ -1086,357 +404,48 @@ async function deleteItem(rowId) {
 
   const confirmed = await showConfirmDialog('אישור מחיקה', 'האם למחוק את הפריט?');
   if (!confirmed) return;
+  
   const prev = [...state.items];
-  state.items = state.items.filter(i=>i.rowId !== rowId); renderItems();
+  state.items = state.items.filter(i => i.rowId !== rowId);
+  reRenderAll();
   showLoading();
+  
   try {
-    const data = await callApi('delete', { rowId });
-    if (data.version) state.remoteVersion = data.version;
+    await deleteItemFromSupabase(rowId);
     setSyncChip('נמחק', 'connected');
   } catch (error) {
-    state.items = prev; renderItems(); showMessage(error.message, true);
+    state.items = prev;
+    reRenderAll();
+    showMessage(error.message, true);
   } finally {
     hideLoading();
   }
 }
-function setAutoRefresh(seconds) {
-  if (state.syncTimer) clearInterval(state.syncTimer);
-  state.syncTimer = null;
-  const sec = Number(seconds);
-  if (!sec || sec <= 0) { setSyncChip('בדיקת שינוי כבויה', 'disconnected'); return; }
-  adaptPollingRate();
-}
-/**
- * adaptPollingRate — set (or reset) the polling interval based on current
- * page-visibility state.  Call this whenever visibility changes.
- * Visible  → poll every 3 s  (fast, user is actively looking at the app)
- * Hidden   → poll every 30 s (slow, tab is backgrounded / screen off)
- * No-ops silently when auto-refresh is disabled (stored value ≤ 0).
- */
-function adaptPollingRate() {
-  if (state.syncTimer) clearInterval(state.syncTimer);
-  state.syncTimer = null;
-  const sec = Number(getConfig().autoRefresh);
-  if (!sec || sec <= 0) return;
-  const rate = document.visibilityState === 'visible' ? 3000 : 30000;
-  setSyncChip(`בדיקה כל ${rate / 1000}ש׳`, 'connected');
-  state.syncTimer = setInterval(checkVersionAndSync, rate);
-}
-function switchTab(tab) {
-  if (!tab) return;
-  state.activeTab = tab;
-  els.navBtns.forEach(btn => {
-    const btnTab = btn.dataset.targetTab || btn.dataset.tab;
-    btn.classList.toggle('active', btnTab === tab);
-  });
-  els.tabPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.tab === tab));
-  // Update aria-selected on all tab buttons
-  document.querySelectorAll('.nav-btn[role="tab"]').forEach(btn => {
-    btn.setAttribute('aria-selected', btn.dataset.targetTab === tab ? 'true' : 'false');
-  });
-  // Render categories when that tab is activated
-  if (tab === 'categories') renderCategories();
-}
 
-async function loadLists() {
-  try {
-    const data = await callApi('getLists', {}, 'GET');
-    state.lists = (data.lists || []).map(l => ({
-      id: l.id,
-      name: l.name,
-      itemCount: l.itemCount || 0
-    }));
-    if (!state.lists.length) {
-      // Create default list
-      await createList('רשימת קניות');
-      return;
-    }
-    if (!state.currentListId && state.lists.length) {
-      state.currentListId = state.lists[0].id;
-    }
-    renderLists();
-  } catch (error) {
-    showMessage('שגיאה בטעינת רשימות: ' + error.message, true);
-  }
-}
-
-function renderLists() {
-  if (els.homeListsContainer) {
-    els.homeListsContainer.innerHTML = '';
-    state.lists.forEach(list => {
-      const isActive = list.id == state.currentListId;
-      const card = document.createElement('div');
-      card.className = `home-list-card${isActive ? ' active-list' : ''}`;
-      card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-          <h4 style="margin:0; padding-top:4px;">${escapeHtml(list.name)}</h4>
-          <button class="list-more-btn" data-list-id="${list.id}" data-list-name="${escapeHtml(list.name)}">⋮</button>
-        </div>
-        <div class="list-meta">
-          <span>${list.itemCount || 0} פריטים</span>
-          ${isActive ? '<span style="color:var(--primary); font-size:12px; font-weight: 700;">★ נבחר</span>' : ''}
-        </div>
-      `;
-      // Handle click on the card itself to switch list
-      card.addEventListener('click', (e) => {
-        if (!e.target.closest('.list-more-btn')) {
-          switchList(list.id);
-        }
-      });
-      els.homeListsContainer.appendChild(card);
-    });
-  }
-
-  const currentList = state.lists.find(l => l.id == state.currentListId);
-  els.currentListName.textContent = currentList ? currentList.name : '';
-}
-
-/**
- * Escape HTML special characters to prevent XSS in innerHTML.
- * @param {string} str
- * @returns {string}
- */
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-async function switchList(listId) {
+async function handleSwitchList(listId) {
   state.currentListId = listId;
-  renderLists();
+  renderLists(handleSwitchList, handleOpenListActions);
   switchTab('list');
   await loadItems();
+  subscribeToList(listId, (payload) => {
+    handleRealtimeItemChange(payload);
+    reRenderAll();
+    setSyncChip('מסונכרן', 'connected');
+  }, setSyncChip);
+  
+  cachedGroups = await loadResponsibilityGroups();
+  renderResponsibilityOptions(cachedGroups);
 }
 
-async function createList(name) {
-  try {
-    showLoading();
-    const data = await callApi('createList', { name });
-    await loadLists();
-    // Switch to the newly created list
-    if (data.listId) {
-      await switchList(data.listId);
-    }
-    showMessage('רשימה נוצרה.');
-  } catch (error) {
-    showMessage(error.message, true);
-  } finally {
-    hideLoading();
-  }
+function handleOpenListActions(listId, listName) {
+  listActionsContext = openListActions(listId, listName);
 }
 
-// ─── List Actions Dialog ─────────────────────────────────────────────
-
-/** Context for the currently targeted list in the actions dialog */
-let listActionsContext = { listId: null, listName: '' };
-
-/**
- * Open the list actions dialog for a specific list.
- * @param {string} listId
- * @param {string} listName
- */
-function openListActions(listId, listName) {
-  listActionsContext = { listId, listName };
-  els.listActionsTitle.textContent = `פעולות — "${listName}"`;
-  els.listActionsDialog.showModal();
-}
-
-/**
- * Rename a list via prompt dialog + API call.
- * @param {string} listId
- * @param {string} currentName
- */
-async function renameList(listId, currentName) {
-  els.listActionsDialog.close();
-  const newName = await showPromptDialog('שינוי שם רשימה', 'שם חדש לרשימה', currentName);
-  if (!newName) return;
-  showLoading();
-  try {
-    const data = await callApi('renameList', { listId, newName });
-    // Update local state
-    if (state.currentListId === listId) {
-      state.currentListId = data.listId;
-    }
-    await loadLists();
-    renderLists();
-    showMessage('שם הרשימה שונה.');
-  } catch (error) {
-    showMessage(error.message, true);
-  } finally {
-    hideLoading();
-  }
-}
-
-/**
- * Duplicate a list via prompt dialog + API call.
- * @param {string} listId
- * @param {string} listName
- */
-async function duplicateList(listId, listName) {
-  els.listActionsDialog.close();
-  const newName = await showPromptDialog('שכפול רשימה', 'שם הרשימה החדשה', listName + ' - עותק');
-  if (!newName) return;
-  showLoading();
-  try {
-    const data = await callApi('duplicateList', { sourceListId: listId, newName });
-    await loadLists();
-    // Switch to the duplicated list
-    if (data.listId) {
-      await switchList(data.listId);
-    }
-    showMessage('הרשימה שוכפלה.');
-  } catch (error) {
-    showMessage(error.message, true);
-  } finally {
-    hideLoading();
-  }
-}
-
-/**
- * Clear all completed (purchased) items from a list.
- * @param {string} listId
- */
-async function clearCompleted(listId) {
-  els.listActionsDialog.close();
-  const purchasedCount = state.items.filter(i => i.purchased).length;
-  if (purchasedCount === 0) {
-    showMessage('אין פריטים שנרכשו לניקוי.');
-    return;
-  }
-  const confirmed = await showConfirmDialog(
-    'ניקוי פריטים שנרכשו',
-    `למחוק ${purchasedCount} פריטים שנקנו?`
-  );
-  if (!confirmed) return;
-  // Optimistic removal
-  const prevItems = [...state.items];
-  state.items = state.items.filter(i => !i.purchased);
-  renderItems();
-  showLoading();
-  try {
-    const data = await callApi('clearCompleted', { listId });
-    if (data.version) state.remoteVersion = data.version;
-    setSyncChip('נוקה', 'connected');
-    showMessage(`${data.deletedCount || purchasedCount} פריטים נמחקו.`);
-    // Reload to get fresh data
-    await loadLists();
-  } catch (error) {
-    // Rollback on error
-    state.items = prevItems;
-    renderItems();
-    showMessage(error.message, true);
-  } finally {
-    hideLoading();
-  }
-}
-
-/**
- * Delete a list after confirmation.
- * @param {string} listId
- * @param {string} listName
- */
-async function deleteListAction(listId, listName) {
-  els.listActionsDialog.close();
-  if (state.lists.length <= 1) {
-    showMessage('אי אפשר למחוק את הרשימה האחרונה.', true);
-    return;
-  }
-  const confirmed = await showConfirmDialog(
-    'מחיקת רשימה',
-    `האם למחוק את הרשימה "${listName}"? פעולה זו לא ניתנת לביטול.`
-  );
-  if (!confirmed) return;
-  showLoading();
-  try {
-    await callApi('deleteList', { listId });
-    await loadLists();
-    // If the deleted list was the active one, switch to the first available
-    if (state.currentListId === listId && state.lists.length) {
-      await switchList(state.lists[0].id);
-    }
-    showMessage('הרשימה נמחקה.');
-  } catch (error) {
-    showMessage(error.message, true);
-  } finally {
-    hideLoading();
-  }
-}
-
-// ─── Categories View ─────────────────────────────────────────────────
-
-/**
- * Render items grouped by category in the categories tab panel.
- */
-function renderCategories() {
-  if (!els.categoriesList) return;
-
-  const items = state.items;
-  const groups = {};
-
-  items.forEach(item => {
-    const cat = item.category || 'ללא קטגוריה';
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(item);
-  });
-
-  if (Object.keys(groups).length === 0) {
-    els.categoriesList.innerHTML = '<p class="empty-state-text">אין פריטים עדיין.</p>';
-    return;
-  }
-
-  els.categoriesList.innerHTML = Object.entries(groups).map(([cat, catItems]) => `
-    <div class="category-group">
-      <div class="category-header">
-        <span>${escapeHtml(cat)}</span>
-        <span class="category-count">${catItems.length} פריטים</span>
-      </div>
-      <div class="category-items">
-        ${catItems.map(item => `
-          <div class="category-item ${item.purchased ? 'purchased' : ''}">
-            <span class="category-item-name">${escapeHtml(item.name)}</span>
-            ${item.quantity ? `<span class="category-item-qty">${escapeHtml(item.quantity)}</span>` : ''}
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `).join('');
-}
-
-// ─── Product Search ──────────────────────────────────────────────────
-
-async function fetchProductData(name) {
-  try {
-    const response = await fetch(`https://api.shufersal.co.il/v1/products?q=${encodeURIComponent(name)}`);
-    const data = await response.json();
-    if (data.products && data.products.length) {
-      const product = data.products[0];
-      return { price: product.price, image: product.image };
-    }
-  } catch (error) {
-    console.log('Error fetching product data:', error);
-  }
-  return null;
-}
-
-// ─── Event Binding ───────────────────────────────────────────────────
-
-function initQuickAddToggle() {
-  if (els.quickAddModePersonal) {
-    els.quickAddModePersonal.addEventListener('click', () => {
-      quickAddMode = 'personal';
-      renderQuickAddCarousel();
-    });
-  }
-  if (els.quickAddModeCommon) {
-    els.quickAddModeCommon.addEventListener('click', () => {
-      quickAddMode = 'common';
-      renderQuickAddCarousel();
-    });
-  }
-}
+// ─── EVENT BINDINGS ──────────────────────────────────────────────
 
 function bindEvents() {
+  console.log('Binding events. Sample element check - homeAddListBtn:', els.homeAddListBtn);
+  // Theme toggle
   function toggleTheme() {
     document.body.classList.toggle('dark-mode');
     const isDark = document.body.classList.contains('dark-mode');
@@ -1447,35 +456,80 @@ function bindEvents() {
   
   if (els.themeToggleBtn) els.themeToggleBtn.addEventListener('click', toggleTheme);
   if (els.globalThemeToggle) els.globalThemeToggle.addEventListener('click', toggleTheme);
-  
-  els.toggleSecretBtn.addEventListener('click', () => { els.sharedSecret.type = els.sharedSecret.type === 'password' ? 'text' : 'password'; });
-  els.saveSettingsBtn.addEventListener('click', () => {
-    setConfig(els.apiUrl.value, els.sharedSecret.value, els.autoRefreshSelect.value);
-    updateConnectionChip(Boolean(els.apiUrl.value.trim()), false);
-    setAutoRefresh(els.autoRefreshSelect.value);
-    showMessage('ההגדרות נשמרו בדפדפן שלך.');
+
+  // Auth events
+  document.getElementById('sendMagicLinkBtn')?.addEventListener('click', async () => {
+    const email = document.getElementById('authEmailInput').value.trim();
+    if (!email) return showMessage('נא להזין כתובת אימייל.', true);
+    try {
+      await sendMagicLink(email);
+      showMessage('קישור כניסה נשלח לאימייל שלך! בדוק את תיבת הדואר.');
+    } catch (err) {
+      showMessage(err.message, true);
+    }
   });
-  els.testConnectionBtn.addEventListener('click', async () => { 
-    setConfig(els.apiUrl.value, els.sharedSecret.value, els.autoRefreshSelect.value); 
-    setAutoRefresh(els.autoRefreshSelect.value); 
-    await loadLists();
-    await loadItems(true); 
+
+  document.getElementById('signOutBtn')?.addEventListener('click', async () => {
+    await signOut();
+    state.items = [];
+    state.lists = [];
+    state.currentListId = null;
+    reRenderAll();
+    renderLists(handleSwitchList, handleOpenListActions);
   });
-  els.autoRefreshSelect.addEventListener('change', () => { 
-    setConfig(els.apiUrl.value, els.sharedSecret.value, els.autoRefreshSelect.value); 
-    setAutoRefresh(els.autoRefreshSelect.value); 
+
+  document.getElementById('saveDisplayNameBtn')?.addEventListener('click', async () => {
+    const name = document.getElementById('displayNameInput').value.trim();
+    if (!name || !currentUser) return;
+    try {
+      await updateDisplayName(name);
+      showMessage('השם עודכן.');
+    } catch (error) {
+      showMessage(error.message, true);
+    }
   });
+
+  // List management
+  document.getElementById('listActionManageGroups')?.addEventListener('click', async () => {
+    els.listActionsDialog.close();
+    cachedGroups = await loadResponsibilityGroups();
+    renderManageGroupsDialog(cachedGroups, async (groupId) => {
+      await deleteResponsibilityGroup(groupId);
+      cachedGroups = await loadResponsibilityGroups();
+      renderManageGroupsDialog(cachedGroups, handleDeleteGroup);
+    });
+    document.getElementById('manageGroupsDialog')?.showModal();
+  });
+
+  document.getElementById('addGroupBtn')?.addEventListener('click', async () => {
+    const label = await showPromptDialog('קבוצה חדשה', 'שם הקבוצה (למשל: יוסי ודנה)', '');
+    if (!label) return;
+    await createResponsibilityGroup(label);
+    cachedGroups = await loadResponsibilityGroups();
+    renderManageGroupsDialog(cachedGroups, handleDeleteGroup);
+  });
+
+  async function handleDeleteGroup(groupId) {
+    await deleteResponsibilityGroup(groupId);
+    cachedGroups = await loadResponsibilityGroups();
+    renderManageGroupsDialog(cachedGroups, handleDeleteGroup);
+  }
+
+  document.getElementById('closeManageGroupsBtn')?.addEventListener('click', () => {
+    document.getElementById('manageGroupsDialog')?.close();
+  });
+
+  // Add item form
   els.addItemForm.addEventListener('submit', async (e) => {
-    await addItem(e);
+    await handleAddItem(e);
     if (els.addDialog && typeof els.addDialog.close === 'function') els.addDialog.close();
   });
-  
-  // Auto-assign category when typing item name
+
+  // Auto-assign category
   const addNameInput = els.addItemForm.querySelector('[name="name"]');
   const addCategorySelect = els.addItemForm.querySelector('[name="category"]');
   if (addNameInput && addCategorySelect) {
     addNameInput.addEventListener('blur', () => {
-      // Only auto-assign if user hasn't already picked one manually
       if (!addCategorySelect.value) {
         const predicted = predictCategory(addNameInput.value);
         if (predicted) addCategorySelect.value = predicted;
@@ -1483,6 +537,7 @@ function bindEvents() {
     });
   }
 
+  // FAB menu
   if (els.mainFab) {
     els.mainFab.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1501,441 +556,209 @@ function bindEvents() {
 
   if (els.fabAddManual) els.fabAddManual.addEventListener('click', () => {
     els.fabContainer.classList.remove('open');
-    els.addItemForm.reset(); // clear old prediction
+    els.addItemForm.reset();
     els.addDialog?.showModal();
   });
-  if (els.generateQrBtn) {
-    els.generateQrBtn.addEventListener('click', () => {
-      const apiUrl = els.apiUrl.value.trim();
-      const sharedSecret = els.sharedSecret.value;
-      if (!apiUrl) {
-        showStatusMessage('נא להזין URL של Apps Script לפני השיתוף.', 'error');
-        return;
-      }
-      els.qrCodeContainer.innerHTML = '';
-      els.qrCodeContainer.style.display = 'block';
-      const data = JSON.stringify({ apiUrl, sharedSecret });
-      new QRCode(els.qrCodeContainer, {
-        text: data,
-        width: 200,
-        height: 200,
-        colorDark: "#000000",
-        colorLight: "#ffffff",
-        correctLevel: QRCode.CorrectLevel.M
-      });
-    });
-  }
 
-  let html5QrcodeScanner = null;
-  
-  if (els.fabScanQr) els.fabScanQr.addEventListener('click', () => {
-    els.fabContainer.classList.remove('open');
-    els.qrScannerDialog.showModal();
-    
-    html5QrcodeScanner = new Html5QrcodeScanner(
-      "qr-reader",
-      { fps: 10, qrbox: {width: 250, height: 250}, rememberLastUsedCamera: true, useBarCodeDetectorIfSupported: true },
-      /* verbose= */ false);
-      
-    html5QrcodeScanner.render(async (decodedText, decodedResult) => {
-      try {
-        const data = JSON.parse(decodedText);
-        if (data.apiUrl) {
-          els.apiUrl.value = data.apiUrl;
-          els.sharedSecret.value = data.sharedSecret || '';
-          setConfig(els.apiUrl.value, els.sharedSecret.value, els.autoRefreshSelect.value);
-          
-          if (html5QrcodeScanner) {
-            html5QrcodeScanner.clear();
-            html5QrcodeScanner = null;
-          }
-          els.qrScannerDialog.close();
-          showStatusMessage('הגדרות עודכנו בהצלחה מקוד QR!', 'success');
-          
-          els.navBtns.forEach(b => b.classList.remove('active'));
-          els.tabPanels.forEach(p => p.classList.remove('active'));
-          
-          if (data.listId) {
-            state.currentListId = data.listId;
-            const listBtn = els.navBtns.find(b => (b.dataset.targetTab || b.dataset.tab) === 'list');
-            if (listBtn) listBtn.classList.add('active');
-            const listPanel = document.getElementById('panel-list');
-            if (listPanel) listPanel.classList.add('active');
-            renderItems();
-            fetchListsAndItems();
-          } else {
-            const syncBtn = els.navBtns.find(b => (b.dataset.targetTab || b.dataset.tab) === 'sync');
-            if (syncBtn) syncBtn.classList.add('active');
-            const syncPanel = document.getElementById('panel-sync');
-            if (syncPanel) syncPanel.classList.add('active');
-            document.getElementById('testConnectionBtn').click();
-          }
-        }
-      } catch (err) {
-        console.error('QR parse error:', err);
-      }
-    }, (errorMessage) => {
-      // parse error, ignore
-    });
-  });
-
-  if (els.closeQrScannerBtn) {
-    els.closeQrScannerBtn.addEventListener('click', () => {
-      if (html5QrcodeScanner) {
-        html5QrcodeScanner.clear();
-        html5QrcodeScanner = null;
-      }
-      els.qrScannerDialog.close();
-    });
-  }
-
-  function showScanProgressDialog(icon, title, desc, isProcessing) {
-    els.scanProgressIcon.textContent = icon;
-    els.scanProgressTitle.textContent = title;
-    els.scanProgressTitle.style.color = (icon === '✅') ? 'var(--success)' : (icon === '⚠️' ? '#d97706' : (icon === '❌' ? 'var(--danger)' : 'inherit'));
-    els.scanProgressDesc.textContent = desc;
-    
-    if (isProcessing) {
-      els.scanProgressSpinner.style.display = 'block';
-      els.scanProgressActions.style.display = 'none';
-    } else {
-      els.scanProgressSpinner.style.display = 'none';
-      els.scanProgressActions.style.display = 'flex';
-    }
-    
-    if (!els.scanProgressDialog.open) {
-      els.scanProgressDialog.showModal();
-    }
-  }
-
-  let barcodeHtml5QrcodeScanner = null;
-  if (els.scanBarcodeBtn) els.scanBarcodeBtn.addEventListener('click', () => {
-    els.barcodeScannerDialog.showModal();
-    
-    // OPTIMIZATION: Format Hinting + Focus Mode for barcode scanning
-    barcodeHtml5QrcodeScanner = new Html5QrcodeScanner(
-      "barcode-reader",
-      { 
-        fps: 30, 
-        rememberLastUsedCamera: true,
-        // Only decode barcode formats found on Israeli grocery products
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E
-        ],
-        videoConstraints: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          // Continuous autofocus is the single biggest improvement for barcode clarity
-          advanced: [{ focusMode: "continuous" }]
-        }
-      },
-      /* verbose= */ false);
-      
-    barcodeHtml5QrcodeScanner.render(async (decodedText, decodedResult) => {
-      if (barcodeHtml5QrcodeScanner) {
-        barcodeHtml5QrcodeScanner.clear();
-        barcodeHtml5QrcodeScanner = null;
-      }
-      els.barcodeScannerDialog.close();
-      
-      const nameInput = els.addItemForm.elements['name'];
-      const imageInput = els.addItemForm.elements['image'];
-      const notesInput = els.addItemForm.elements['notes'];
-      const categorySelect = els.addItemForm.elements['category'];
-      
-      els.scanRetakeBtn.onclick = () => {
-        els.scanProgressDialog.close();
-        els.scanBarcodeBtn.click();
-      };
-      els.scanCloseBtn.onclick = () => {
-        els.scanProgressDialog.close();
-        nameInput.focus();
-      };
-      
-      showScanProgressDialog('🔍', 'מחפש במאגר...', 'בודק את הברקוד מול מאגר המוצרים.', true);
-      const searchStart = Date.now();
-      
-      try {
-        const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
-        const data = await response.json();
-        
-        const elapsed2 = Date.now() - searchStart;
-        if (elapsed2 < 600) await new Promise(r => setTimeout(r, 600 - elapsed2));
-        
-        if (data.status === 1 && data.product) {
-          const product = data.product;
-          const foundName = product.product_name_he || product.product_name || decodedText;
-          
-          showScanProgressDialog('✅', 'המוצר אותר!', foundName, false);
-          els.scanProgressActions.style.display = 'none'; // Auto close
-          
-          nameInput.value = foundName;
-          if (product.image_front_url) {
-            imageInput.value = product.image_front_url;
-          }
-          
-          if (typeof predictCategory === 'function' && foundName) {
-            const predicted = predictCategory(foundName);
-            if (predicted && !categorySelect.value) {
-              categorySelect.value = predicted;
-            }
-          }
-          
-          setTimeout(() => {
-            if (els.scanProgressDialog.open) els.scanProgressDialog.close();
-          }, 1500);
-          
-        } else {
-          showScanProgressDialog('⚠️', 'מוצר חדש', 'הברקוד נסרק בהצלחה, אך אינו במאגר. אנא הקלד את שמו.', false);
-          if (!notesInput.value.includes(decodedText)) {
-            notesInput.value = (notesInput.value ? notesInput.value + ' | ' : '') + decodedText;
-          }
-        }
-      } catch (err) {
-        console.error('Barcode fetch error:', err);
-        const elapsedErr = Date.now() - searchStart;
-        if (elapsedErr < 800) await new Promise(r => setTimeout(r, 800 - elapsedErr));
-        showScanProgressDialog('❌', 'שגיאת רשת', 'לא הצלחנו להתחבר למאגר המוצרים.', false);
-      }
-    }, (errorMessage) => {
-      // parse error, ignore
-    });
-  });
-
-  if (els.closeBarcodeScannerBtn) {
-    els.closeBarcodeScannerBtn.addEventListener('click', () => {
-      if (barcodeHtml5QrcodeScanner) {
-        barcodeHtml5QrcodeScanner.clear();
-        barcodeHtml5QrcodeScanner = null;
-      }
-      els.barcodeScannerDialog.close();
-    });
-  }
-
-  let wakeLock = null;
-  if (els.fabShopMode) els.fabShopMode.addEventListener('click', async () => {
-    els.fabContainer.classList.remove('open');
-    const isShopMode = document.body.classList.toggle('shop-mode');
-    
-    if (isShopMode) {
-      els.fabShopMode.querySelector('.fab-action-icon').textContent = '🚪';
-      try {
-        if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
-      } catch (err) { console.error('Wake Lock error:', err); }
-    } else {
-      els.fabShopMode.querySelector('.fab-action-icon').textContent = '🛒';
-      if (wakeLock) wakeLock.release().then(() => wakeLock = null);
-    }
-  });
-
-  if (els.closeAddDialogBtn) els.closeAddDialogBtn.addEventListener('click', () => els.addDialog?.close());
-  els.searchInput.addEventListener('input', e => { state.filters.search = e.target.value; renderItems(); });
-  els.statusFilter.addEventListener('change', e => { state.filters.status = e.target.value; renderItems(); });
-  els.sortSelect.addEventListener('change', e => { state.filters.sort = e.target.value; renderItems(); });
-  els.editItemForm.addEventListener('submit', saveEditedItem);
+  // Edit dialog
+  els.editItemForm.addEventListener('submit', handleSaveEditedItem);
   els.cancelEditBtn.addEventListener('click', () => els.editDialog.close());
 
-  // Auto-assign category when editing item name
-  if (els.editName && els.editCategory) {
-    els.editName.addEventListener('blur', () => {
-      // Only auto-assign if category is empty
-      if (!els.editCategory.value) {
-        const predicted = predictCategory(els.editName.value);
-        if (predicted) els.editCategory.value = predicted;
-      }
+  // Navigation
+  els.navBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetTab = btn.dataset.targetTab || btn.dataset.tab;
+      switchTab(targetTab);
     });
-  }
-
-  // Nav buttons — support both data-target-tab and data-tab attributes
-  els.navBtns.forEach(btn => btn.addEventListener('click', () => {
-    const tab = btn.dataset.targetTab || btn.dataset.tab;
-    if (tab) switchTab(tab);
-  }));
-
-  // Visibility API: instant refresh + adaptive polling rate
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      silentRefresh();      // immediate sync when tab becomes visible
-    }
-    adaptPollingRate();     // switch between 3 s (visible) and 30 s (hidden)
-  });
-  window.addEventListener('focus', () => {
-    silentRefresh();        // also sync instantly when the window regains focus
-  });
-  
-  // OPTIMIZATION: Drain offline queue when returning online
-  window.addEventListener('online', drainMutationQueue);
-
-  // Event delegation for home lists container (for the more button)
-  if (els.homeListsContainer) {
-    els.homeListsContainer.addEventListener('click', (e) => {
-      // Handle more button click → open list actions
-      const moreBtn = e.target.closest('.list-more-btn');
-      if (moreBtn) {
-        e.stopPropagation();
-        const listId = moreBtn.dataset.listId;
-        const listName = moreBtn.dataset.listName;
-        if (listId) openListActions(listId, listName);
-      }
-    });
-  }
-
-  if (els.homeAddListBtn) {
-    els.homeAddListBtn.addEventListener('click', async () => {
-      const name = await showPromptDialog('רשימה חדשה', 'שם הרשימה', '');
-      if (name) await createList(name);
-    });
-  }
-
-  // List actions dialog buttons
-  els.listActionsClose.addEventListener('click', () => els.listActionsDialog.close());
-  els.listActionRename.addEventListener('click', () => {
-    renameList(listActionsContext.listId, listActionsContext.listName);
-  });
-  els.listActionDuplicate.addEventListener('click', () => {
-    duplicateList(listActionsContext.listId, listActionsContext.listName);
-  });
-  els.listActionShareQr.addEventListener('click', () => {
-    els.listActionsDialog.close();
-    const apiUrl = els.apiUrl.value.trim();
-    const sharedSecret = els.sharedSecret.value;
-    if (!apiUrl) {
-      showStatusMessage('נא להזין URL של Apps Script לפני השיתוף.', 'error');
-      return;
-    }
-    const data = JSON.stringify({ apiUrl, sharedSecret, listId: listActionsContext.listId });
-    els.showQrContainer.innerHTML = '';
-    new QRCode(els.showQrContainer, {
-      text: data,
-      width: 200,
-      height: 200,
-      colorDark: "#000000",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.M
-    });
-    els.showQrDialog.showModal();
-  });
-  if (els.closeShowQrBtn) els.closeShowQrBtn.addEventListener('click', () => els.showQrDialog.close());
-  els.listActionClear.addEventListener('click', () => {
-    clearCompleted(listActionsContext.listId);
-  });
-  els.listActionDelete.addEventListener('click', () => {
-    deleteListAction(listActionsContext.listId, listActionsContext.listName);
   });
 
-  // Product search
-  els.searchProductBtn.addEventListener('click', async () => {
-    const name = els.addItemForm.querySelector('[name="name"]').value;
+  // Search and filter
+  els.searchInput.addEventListener('input', (e) => {
+    state.filters.search = e.target.value;
+    reRenderAll();
+  });
+
+  els.statusFilter.addEventListener('change', (e) => {
+    state.filters.status = e.target.value;
+    reRenderAll();
+  });
+
+  els.sortSelect.addEventListener('change', (e) => {
+    state.filters.sort = e.target.value;
+    reRenderAll();
+  });
+
+  // Home list management
+  els.homeAddListBtn?.addEventListener('click', async () => {
+    const name = await showPromptDialog('רשימה חדשה', 'שם הרשימה', 'רשימת קניות');
     if (!name) return;
-    const data = await fetchProductData(name);
-    if (data) {
-      els.addItemForm.querySelector('[name="price"]').value = data.price;
-      els.addItemForm.querySelector('[name="image"]').value = data.image;
-      showMessage('נתונים נטענו מרמי לוי.');
-    } else {
-      showMessage('לא נמצאו נתונים.', true);
+    const newListId = await createList(name);
+    if (newListId) await handleSwitchList(newListId);
+  });
+
+  // List actions
+  els.listActionRename?.addEventListener('click', async () => {
+    const newName = await showPromptDialog('שינוי שם רשימה', 'שם חדש לרשימה', listActionsContext.listName);
+    if (!newName) return;
+    els.listActionsDialog.close();
+    await renameList(listActionsContext.listId, newName);
+    await loadLists();
+    renderLists(handleSwitchList, handleOpenListActions);
+  });
+
+  els.listActionDuplicate?.addEventListener('click', async () => {
+    const newName = await showPromptDialog('שכפול רשימה', 'שם הרשימה החדשה', listActionsContext.listName + ' - עותק');
+    if (!newName) return;
+    els.listActionsDialog.close();
+    const newListId = await duplicateList(listActionsContext.listId, newName);
+    if (newListId) await handleSwitchList(newListId);
+  });
+
+  els.listActionShareQr?.addEventListener('click', async () => {
+    els.listActionsDialog.close();
+    const inviteUrl = await generateInviteQr(listActionsContext.listId);
+    if (inviteUrl) {
+      els.showQrContainer.innerHTML = '';
+      new QRCode(els.showQrContainer, {
+        text: inviteUrl,
+        width: 200,
+        height: 200,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+      els.showQrDialog.showModal();
     }
+  });
+
+  els.closeShowQrBtn?.addEventListener('click', () => els.showQrDialog.close());
+
+  els.listActionClear?.addEventListener('click', async () => {
+    els.listActionsDialog.close();
+    await clearCompleted(listActionsContext.listId);
+    reRenderAll();
+  });
+
+  els.listActionDelete?.addEventListener('click', async () => {
+    const confirmed = await showConfirmDialog('מחיקת רשימה', `האם למחוק את הרשימה "${listActionsContext.listName}"?`);
+    if (!confirmed) return;
+    els.listActionsDialog.close();
+    const newListId = await deleteList(listActionsContext.listId);
+    if (newListId) await handleSwitchList(newListId);
+  });
+
+  els.listActionsClose?.addEventListener('click', () => els.listActionsDialog.close());
+
+  // Quick-add mode toggle
+  els.quickAddModePersonal?.addEventListener('click', () => {
+    setQuickAddMode('personal');
+    renderQuickAddCarousel(handleQuickAddItem);
+  });
+
+  els.quickAddModeCommon?.addEventListener('click', () => {
+    setQuickAddMode('common');
+    renderQuickAddCarousel(handleQuickAddItem);
   });
 }
-// OPTIMIZATION: Instant cold-start render by hydrating from cache
+
+// ─── CACHE & INITIALIZATION ──────────────────────────────────────
+
 function hydrateFromCache() {
   try {
     const raw = localStorage.getItem(LIST_CACHE_KEY);
     if (!raw) return;
     const cached = JSON.parse(raw);
-    // Only use cache if it's for the current list and less than 1 hour old
     if (
       cached &&
       cached.listId === state.currentListId &&
       Date.now() - cached.cachedAt < 3600000
     ) {
       state.items = (cached.items || []).map(normalizeItem);
-      renderItems();
-      renderQuickAddCarousel();
+      reRenderAll();
     }
-  } catch(e) {}
+  } catch (e) {}
 }
 
-function boot() {
-  hydrateSettings();
-  bindEvents();
-  initFilterToggle();
-  initQuickAddToggle();
-  // Bug 5 fix: explicitly activate the Home tab on startup
-  switchTab('home');
-  setAutoRefresh(getConfig().autoRefresh || '5');
-  if (getConfig().apiUrl) {
-    loadLists().then(() => {
-      // Ensure we're on the home tab after loading
-      switchTab('home');
-      if (state.currentListId) {
-        hydrateFromCache();
-        return loadItems(false, { silent: true });
-      }
-    });
-  } else {
-    els.loading.classList.add('hidden');
-    showMessage('הכנס URL של Apps Script ולחץ על בדיקת חיבור כדי להתחיל.');
-    // Show fallback carousel for new/unconfigured users
-    renderQuickAddCarousel();
+function hydrateDarkMode() {
+  const isDark = localStorage.getItem('shopping_list_dark_mode') === '1';
+  if (isDark) {
+    document.body.classList.add('dark-mode');
+    if (els.themeToggleBtn) els.themeToggleBtn.textContent = 'החלף למצב יום ☀️';
+    if (els.globalThemeToggle) els.globalThemeToggle.textContent = '☀️';
   }
 }
 
-// Register service worker for PWA functionality
-if ('serviceWorker' in navigator) {
-  // Unregister all old service workers first
-  navigator.serviceWorker.getRegistrations().then(registrations => {
-    registrations.forEach(registration => {
-      registration.unregister();
-    });
+async function boot() {
+  initElements();
+  hydrateDarkMode();
+  hydrateFromCache();
+  bindEvents();
+  initFilterToggle();
+  switchTab('home');
+  
+  await initAuth(async (user) => {
+    console.log('[BOOT] Auth callback fired with user:', user?.email || 'NO USER');
+    if (user) {
+      console.log('[BOOT] User authenticated, loading lists...');
+      await loadLists();
+      console.log('[BOOT] Lists loaded, state.lists:', state.lists.length);
+      renderLists(handleSwitchList, handleOpenListActions);
+      if (state.currentListId) {
+        console.log('[BOOT] Current list ID exists:', state.currentListId);
+        await loadItems();
+        subscribeToList(state.currentListId, (payload) => {
+          handleRealtimeItemChange(payload);
+          reRenderAll();
+          setSyncChip('מסונכרן', 'connected');
+        }, setSyncChip);
+        cachedGroups = await loadResponsibilityGroups();
+        renderResponsibilityOptions(cachedGroups);
+      } else {
+        console.log('[BOOT] No current list ID');
+      }
+      const inviteListId = await checkInviteToken();
+      if (inviteListId) await handleSwitchList(inviteListId);
+    } else {
+      console.log('[BOOT] No user in auth callback');
+    }
   });
   
-  // Then register the new one
+  renderQuickAddCarousel(handleQuickAddItem);
+}
+
+// Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    registrations.forEach(registration => registration.unregister());
+  });
+  
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js?v=11')
-      .then(registration => {
-        console.log('Service Worker registered successfully:', registration.scope);
-      })
-      .catch(error => {
-        console.log('Service Worker registration failed:', error);
-      });
+      .then(registration => console.log('Service Worker registered:', registration.scope))
+      .catch(error => console.log('Service Worker registration failed:', error));
   });
 }
 
-boot();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
 
-// ─── OneSignal Push Notification Helpers ─────────────────────────────────────
+// ─── ONESIGNAL PUSH NOTIFICATIONS ────────────────────────────────
 
-/**
- * Initialize OneSignal SDK and wire up the push subscribe button.
- * Call this once after the page loads.
- * Requires ONESIGNAL_APP_ID to be set at the top of this file.
- */
 function initOneSignal() {
   if (typeof OneSignalDeferred === 'undefined') {
-    console.warn('[OneSignal] SDK not loaded yet — retrying in 1s');
     setTimeout(initOneSignal, 1000);
     return;
   }
 
   window.OneSignalDeferred = window.OneSignalDeferred || [];
-  OneSignalDeferred.push(async function(OneSignal) {
+  OneSignalDeferred.push(async function (OneSignal) {
     try {
       await OneSignal.init({
         appId: ONESIGNAL_APP_ID,
-        // Set to false so we control the prompt ourselves via the button
-        promptOptions: {
-          slidedown: { enabled: false }
-        },
-        // Use a relative path so the browser resolves it relative to the current
-        // page origin (/reshima/), yielding /reshima/OneSignalSDKWorker.js.
-        // An absolute path like '/reshima/OneSignalSDKWorker.js' is resolved from
-        // the domain root and breaks on GitHub Pages subpath deployments.
+        promptOptions: { slidedown: { enabled: false } },
         serviceWorkerPath: 'OneSignalSDKWorker.js',
         serviceWorkerParam: { scope: '/reshima/' }
       });
@@ -1948,20 +771,19 @@ function initOneSignal() {
           const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
           if (isSubscribed) {
             await OneSignal.User.PushSubscription.optOut();
-            showStatusMessage('בוטלה הרשמה להתראות.', 'info');
+            showMessage('בוטלה הרשמה להתראות.');
           } else {
             await OneSignal.Notifications.requestPermission();
             await OneSignal.User.PushSubscription.optIn();
-            showStatusMessage('✅ הרשמת להתראות בהצלחה!', 'success');
+            showMessage('✅ הרשמת להתראות בהצלחה!');
           }
           updatePushButtonState();
         });
       }
 
-      // Keep button label in sync when subscription state changes externally
       OneSignal.User.PushSubscription.addEventListener('change', updatePushButtonState);
     } catch (error) {
-      console.warn('[OneSignal] Initialization skipped or failed (likely running on localhost instead of configured domain):', error);
+      console.warn('[OneSignal] Initialization failed:', error);
       const pushBtn = document.getElementById('pushSubscribeBtn');
       if (pushBtn) {
         pushBtn.textContent = 'התראות (לא נתמך בדומיין זה)';
@@ -1982,7 +804,6 @@ async function updatePushButtonState() {
   }
 
   try {
-    // OneSignal may not be ready yet — guard with try/catch
     const isSubscribed = await window.OneSignal?.User?.PushSubscription?.optedIn;
     btn.textContent = isSubscribed ? 'בטל הרשמה להתראות' : 'הפעל התראות push';
     btn.dataset.subscribed = isSubscribed ? '1' : '0';
@@ -1992,16 +813,6 @@ async function updatePushButtonState() {
   }
 }
 
-function showStatusMessage(msg, type) {
-  const el = document.getElementById('statusMessage');
-  if (!el) return;
-  el.textContent = msg;
-  el.className = 'status-message ' + (type || '');
-  el.classList.remove('hidden');
-  setTimeout(() => el.classList.add('hidden'), 4000);
-}
-
-// Initialise OneSignal after DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initOneSignal);
 } else {

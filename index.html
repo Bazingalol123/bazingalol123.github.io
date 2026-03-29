@@ -195,6 +195,14 @@
           </label>
         </div>
 
+        <!-- MIGRATION: Responsibility group selector for item assignment -->
+        <label class="field">
+          <span>אחראי</span>
+          <select name="responsibleGroup" id="addResponsibleGroup">
+            <option value="">ללא אחראי</option>
+          </select>
+        </label>
+
         <label class="field">
           <span>הערות (אופציונלי)</span>
           <input name="notes" placeholder="כל הערה נוספת" />
@@ -226,56 +234,42 @@
     </section>
 
     <section class="tab-panel" data-tab="sync" role="tabpanel" id="panel-sync" aria-labelledby="tab-sync">
-      <section class="card settings-card">
+      <!-- MIGRATION: Auth section replacing Apps Script connection fields -->
+      <section class="card settings-card" id="authSection">
         <div class="section-head">
           <div>
-            <h2>חיבור למערכת</h2>
-            <p class="muted">ההגדרות נשמרות רק בדפדפן שלך.</p>
-          </div>
-          <span class="status-chip" id="connectionChipMirror">לא מחובר</span>
-        </div>
-
-        <label class="field">
-          <span>URL של Apps Script Web App</span>
-          <input id="apiUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
-        </label>
-
-        <label class="field">
-          <span>סיסמה משותפת</span>
-          <div class="password-wrap">
-            <input id="sharedSecret" type="password" placeholder="לא נשמרת בקוד" />
-            <button type="button" class="icon-btn" id="toggleSecretBtn" aria-label="הצג/הסתר">👁</button>
-          </div>
-        </label>
-
-        <div class="action-row" style="margin-top: 16px;">
-          <button type="button" id="generateQrBtn" class="btn-secondary small-btn">שתף באמצעות קוד QR</button>
-        </div>
-        <div id="qrCodeContainer" style="display: none; margin-top: 16px; text-align: center; background: white; padding: 16px; border-radius: var(--radius-lg);"></div>
-
-        <div class="dialog-actions">
-          <button id="saveSettingsBtn" class="btn-primary">שמור</button>
-          <button id="testConnectionBtn" class="btn-secondary">בדיקת חיבור</button>
-        </div>
-      </section>
-
-      <section class="card settings-card">
-        <div class="section-head">
-          <div>
-            <h3>סנכרון חכם</h3>
-            <p class="muted">רענון אוטומטי של הרשימה.</p>
+            <h2>כניסה לחשבון</h2>
+            <p class="muted" id="authStatusText">התחברו עם קישור קסם שנשלח לאימייל שלכם.</p>
           </div>
         </div>
 
-        <label class="field">
-          <span>תדירות בדיקה</span>
-          <select id="autoRefreshSelect">
-            <option value="0">כבוי</option>
-            <option value="3">כל 3 שניות</option>
-            <option value="5">כל 5 שניות</option>
-            <option value="10">כל 10 שניות</option>
-          </select>
-        </label>
+        <!-- Sign-in form (shown when logged out) -->
+        <div id="signInForm">
+          <label class="field">
+            <span>כתובת אימייל</span>
+            <input id="authEmailInput" type="email" placeholder="your@email.com" autocomplete="email" />
+          </label>
+          <button id="sendMagicLinkBtn" class="btn-primary">שלח קישור כניסה</button>
+        </div>
+
+        <!-- Signed-in state (shown when logged in) -->
+        <div id="signedInPanel" style="display:none;">
+          <div class="sync-line" style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong id="userDisplayName"></strong>
+              <p class="muted" style="margin:4px 0 0; font-size:0.85rem;" id="userEmail"></p>
+            </div>
+            <span id="userAvatarEmoji" style="font-size:2rem;">🛒</span>
+          </div>
+          <label class="field" style="margin-top:16px;">
+            <span>שם תצוגה</span>
+            <input id="displayNameInput" type="text" placeholder="השם שלך" />
+          </label>
+          <div class="dialog-actions">
+            <button id="saveDisplayNameBtn" class="btn-primary small-btn" style="width:auto;">שמור שם</button>
+            <button id="signOutBtn" class="btn-secondary small-btn" style="width:auto;">התנתקות</button>
+          </div>
+        </div>
       </section>
 
       <section class="card settings-card">
@@ -353,6 +347,10 @@
             <div class="item-meta-row">
               <span class="item-price meta-pill"></span>
               <span class="item-date meta-pill subtle"></span>
+              <!-- MIGRATION: Show who added each item -->
+              <span class="item-added-by meta-pill"></span>
+              <!-- MIGRATION: Responsibility group badge -->
+              <span class="item-responsibility meta-pill" style="display:none;"></span>
             </div>
             <p class="item-notes"></p>
           </div>
@@ -405,6 +403,13 @@
           </select>
         </label>
       </div>
+      <!-- MIGRATION: Responsibility group selector for item assignment -->
+      <label class="field">
+        <span>אחראי</span>
+        <select name="responsibleGroup" id="editResponsibleGroup">
+          <option value="">ללא אחראי</option>
+        </select>
+      </label>
       <label class="field">
         <span>הערות</span>
         <input id="editNotes" />
@@ -473,6 +478,11 @@
           <span class="action-icon">🧹</span>
           <span>נקה פריטים שנרכשו</span>
         </button>
+        <!-- MIGRATION: Manage responsibility groups button -->
+        <button id="listActionManageGroups" class="list-action-btn">
+          <span class="action-icon">👥</span>
+          <span>ניהול אחריות</span>
+        </button>
         <hr class="action-divider" />
         <button id="listActionDelete" class="list-action-btn list-action-danger">
           <span class="action-icon">🗑️</span>
@@ -539,9 +549,22 @@
     </div>
   </dialog>
 
+  <!-- MIGRATION: Dialog for managing responsibility groups -->
+  <dialog id="manageGroupsDialog" class="app-dialog">
+    <div class="dialog-content">
+      <h3>ניהול אחריות</h3>
+      <p class="muted">הגדר מי אחראי לאילו פריטים</p>
+      <div id="groupsList"></div>
+      <button id="addGroupBtn" class="btn-secondary" style="margin-top:16px;">+ הוסף קבוצה</button>
+      <button id="closeManageGroupsBtn" class="btn-secondary" style="margin-top:8px;">סגירה</button>
+    </div>
+  </dialog>
+
+  <!-- MIGRATION: Supabase client library replacing Apps Script backend -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script src="app.js?v=10"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
