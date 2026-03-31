@@ -1,12 +1,13 @@
 // Centralized application state
 export const state = {
   items: [],
-  filters: { search: '', status: 'all', sort: 'created_desc' },
+  filters: { search: '', status: 'all', sort: 'created_desc', responsibility: 'all' },
   lastLoadedAt: null,
   syncing: false,
   activeTab: 'home',
   lists: [],
-  currentListId: null
+  currentListId: null,
+  responsibilityGroups: []
 };
 
 // Cache key for localStorage

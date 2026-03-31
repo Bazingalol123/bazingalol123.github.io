@@ -26,7 +26,42 @@
   <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
 </head>
 <body>
-  <div class="app-layout">
+  <!-- Landing Page (Logged Out Flow) -->
+  <div id="landingPage" class="landing-page" style="display: none;">
+    <div class="landing-content">
+      <div class="landing-hero">
+        <div style="font-size: 3rem; margin-bottom: 8px;">🛒</div>
+        <h1>רשימת קניות משותפת</h1>
+        <p class="landing-subtitle">פשוט, מהיר ומסונכרן בזמן אמת.</p>
+      </div>
+      
+      <div class="landing-features">
+        <div class="feature-card">
+          <div class="feature-icon">⚡️</div>
+          <h3>סנכרון בזמן אמת</h3>
+          <p>כל השותפים רואים את העדכונים באופן מיידי. אין יותר קניות כפולות!</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🚀</div>
+          <h3>הוספה מהירה</h3>
+          <p>השלימו פריטים נפוצים בלחיצה אחת מתוך הרגלי הקנייה שלכם.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📶</div>
+          <h3>גם ללא אינטרנט</h3>
+          <p>אפשר להוסיף ולסמן פריטים גם כשאין קליטה, הכל יסונכרן כשתחזרו.</p>
+        </div>
+      </div>
+      
+      <div class="landing-actions">
+        <button id="landingSignUpBtn" class="btn-primary" style="margin-bottom: 12px;">הרשמה והתחלת שימוש</button>
+        <button id="landingSignInBtn" class="btn-secondary">כבר יש לכם חשבון? כניסה</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App Layout (Logged In) -->
+  <div id="appLayout" class="app-layout" style="display: none;">
     <header class="app-header">
       <div class="hero-copy" style="justify-content: space-between; width: 100%;">
         <div style="display: flex; align-items: center; gap: 16px;">
@@ -59,7 +94,30 @@
 
     <main class="app-main">
       <section class="tab-panel active" data-tab="home" role="tabpanel" id="panel-home" aria-labelledby="tab-home">
-        <section class="card home-card">
+        <!-- New User Onboarding (Hidden if lists exist) -->
+        <div id="onboardingView" class="onboarding-view" style="display: none;">
+          <div class="onboarding-header">
+            <h2 id="onboardingGreeting">שלום!</h2>
+            <p class="muted">בואו נתחיל - מה תרצו לעשות?</p>
+          </div>
+          <div class="onboarding-actions">
+            <button id="onboardingCreateListBtn" class="btn-primary" style="margin-bottom: 16px; padding: 24px;">
+              <span style="font-size: 1.5rem; display: block; margin-bottom: 8px;">✨</span>
+              יצירת רשימה חדשה
+            </button>
+            <div class="onboarding-divider"><span>או</span></div>
+            <button id="onboardingJoinBtn" class="btn-secondary" style="margin-bottom: 12px; padding: 16px;">
+              <span style="font-size: 1.2rem; margin-inline-end: 8px;">🔗</span>
+              הצטרפות עם קוד/קישור
+            </button>
+            <button id="onboardingJoinQrBtn" class="btn-secondary" style="padding: 16px;">
+              <span style="font-size: 1.2rem; margin-inline-end: 8px;">📷</span>
+              סריקת קוד QR
+            </button>
+          </div>
+        </div>
+
+        <section id="homeListsView" class="card home-card">
           <div class="section-head compact" style="padding: 16px 16px 0;">
             <div>
               <h3>הרשימות שלי</h3>
@@ -106,6 +164,12 @@
                 <option value="category_asc">לפי קטגוריה</option>
               </select>
             </div>
+            <!-- GROUPS: Responsibility filter -->
+            <select id="responsibilityFilter" aria-label="סינון לפי אחריות">
+              <option value="all">כל האחריות</option>
+              <option value="unassigned">ללא אחראי</option>
+              <option value="assigned">עם אחראי</option>
+            </select>
           </div>
         </div>
       </section>
@@ -128,7 +192,7 @@
       <button id="mainFab" class="fab" type="button" aria-label="תפריט פעולות" aria-expanded="false">
         <span class="fab-icon">＋</span>
       </button>
-      <div class="fab-menu" id="fabMenu" aria-hidden="true">
+      <div class="fab-menu" id="fabMenu">
         <div class="fab-action-wrapper">
           <span class="fab-label">הוספה ידנית</span>
           <button class="fab-action" id="fabAddManual" title="הוספה ידנית">
@@ -239,20 +303,10 @@
         <div class="section-head">
           <div>
             <h2>כניסה לחשבון</h2>
-            <p class="muted" id="authStatusText">התחברו עם קישור קסם שנשלח לאימייל שלכם.</p>
+            <p class="muted" id="authStatusText">התחבר או הרשם כדי להתחיל.</p>
           </div>
         </div>
 
-        <!-- Sign-in form (shown when logged out) -->
-        <div id="signInForm">
-          <label class="field">
-            <span>כתובת אימייל</span>
-            <input id="authEmailInput" type="email" placeholder="your@email.com" autocomplete="email" />
-          </label>
-          <button id="sendMagicLinkBtn" class="btn-primary">שלח קישור כניסה</button>
-        </div>
-
-        <!-- Signed-in state (shown when logged in) -->
         <div id="signedInPanel" style="display:none;">
           <div class="sync-line" style="display:flex; justify-content:space-between; align-items:center;">
             <div>
@@ -296,7 +350,6 @@
         <div class="action-row" style="margin-top: 0; margin-bottom: 16px;">
           <button id="themeToggleBtn" type="button" class="btn-secondary">החלף למצב לילה 🌙</button>
         </div>
-        <div id="statusMessage" class="status-message hidden" aria-live="polite" role="status"></div>
         <div class="tips-list">
           <div class="tip-card"><strong>שיתוף</strong><span>שלחו את הכתובת לשותפים, יחד עם ה־URL של Apps Script והסיסמה.</span></div>
           <div class="tip-card"><strong>אמינות</strong><span>אם שניכם עורכים את אותו הפריט יחד, השינוי האחרון ינצח.</span></div>
@@ -305,6 +358,7 @@
       </section>
     </section>
   </main>
+</div>
 
   <nav class="bottom-nav" role="tablist" aria-label="תפריט תחתון">
     <button class="nav-btn active" data-target-tab="home" role="tab" aria-selected="true" aria-controls="panel-home" id="tab-home">
@@ -435,6 +489,70 @@
     <div class="spinner"></div>
   </div>
 
+  <dialog id="authDialog" class="app-dialog" aria-labelledby="authDialogTitle">
+    <div class="dialog-content">
+      <div class="section-head">
+        <div>
+          <h2 id="authDialogTitle">כניסה לחשבון</h2>
+          <p class="muted" id="authStatusText">התחבר או הרשם כדי להתחיל.</p>
+        </div>
+      </div>
+
+      <div id="signInForm">
+        <!-- Toggle between Sign In and Sign Up modes -->
+        <div class="auth-mode-toggle" style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <button id="authModeSignIn" class="auth-mode-btn active" type="button">כניסה</button>
+          <button id="authModeSignUp" class="auth-mode-btn" type="button">הרשמה</button>
+        </div>
+
+        <!-- Sign In Form -->
+        <div id="signInFormFields">
+          <label class="field">
+            <span>כתובת אימייל</span>
+            <input id="signInEmail" type="email" placeholder="your@email.com"
+                   autocomplete="email" required />
+          </label>
+          <label class="field">
+            <span>סיסמה</span>
+            <input id="signInPassword" type="password" placeholder="הזן סיסמה"
+                   autocomplete="current-password" required />
+          </label>
+          <button id="signInBtn" class="btn-primary">התחבר</button>
+          <button id="forgotPasswordBtn" class="btn-link" type="button"
+                  style="margin-top: 8px; font-size: 0.9rem;">שכחת סיסמה?</button>
+        </div>
+
+        <!-- Sign Up Form -->
+        <div id="signUpFormFields" style="display: none;">
+          <label class="field">
+            <span>שם תצוגה (אופציונלי)</span>
+            <input id="signUpDisplayName" type="text" placeholder="השם שלך"
+                   autocomplete="name" />
+          </label>
+          <label class="field">
+            <span>כתובת אימייל</span>
+            <input id="signUpEmail" type="email" placeholder="your@email.com"
+                   autocomplete="email" required />
+          </label>
+          <label class="field">
+            <span>סיסמה</span>
+            <input id="signUpPassword" type="password" placeholder="לפחות 6 תווים"
+                   autocomplete="new-password" required />
+          </label>
+          <label class="field">
+            <span>אימות סיסמה</span>
+            <input id="signUpPasswordConfirm" type="password" placeholder="הזן שוב את הסיסמה"
+                   autocomplete="new-password" required />
+          </label>
+          <button id="signUpBtn" class="btn-primary">הרשם</button>
+        </div>
+      </div>
+      <div class="dialog-actions" style="margin-top: 16px;">
+        <button id="closeAuthDialogBtn" class="btn-secondary">ביטול</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="confirmDialog" class="app-dialog" aria-labelledby="confirmDialogTitle">
     <div class="dialog-content">
       <h3 id="confirmDialogTitle">אישור</h3>
@@ -453,6 +571,36 @@
       <div class="dialog-actions">
         <button id="promptDialogOk" class="btn-primary">אישור</button>
         <button id="promptDialogCancel" class="btn-secondary">ביטול</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- MIGRATION: Dialog for creating a new list with type -->
+  <dialog id="newListDialog" class="app-dialog" aria-labelledby="newListDialogTitle">
+    <div class="dialog-content">
+      <h3 id="newListDialogTitle">רשימה חדשה</h3>
+      <label class="field" style="margin-top: 16px;">
+        <span class="field-label">שם הרשימה</span>
+        <input type="text" id="newListName" placeholder="לדוגמה: קניות לשבת, טיול כנרת" autocomplete="off" />
+      </label>
+      
+      <div class="field" style="margin-top: 16px; margin-bottom: 24px;">
+        <span class="field-label">סוג רשימה</span>
+        <div class="radio-group" style="display: flex; gap: 16px; margin-top: 8px;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="radio" name="newListType" value="shopping" checked />
+            <span>🛒 רשימת קניות</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="radio" name="newListType" value="event" />
+            <span>⛺ טיול / אירוע</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="dialog-actions">
+        <button id="newListDialogOk" class="btn-primary">צור רשימה</button>
+        <button id="newListDialogCancel" class="btn-secondary">ביטול</button>
       </div>
     </div>
   </dialog>
@@ -559,6 +707,44 @@
       <button id="closeManageGroupsBtn" class="btn-secondary" style="margin-top:8px;">סגירה</button>
     </div>
   </dialog>
+
+  <!-- Password Reset Dialogs -->
+  <dialog id="resetPasswordDialog" class="app-dialog" aria-labelledby="resetPasswordTitle">
+    <div class="dialog-content">
+      <h3 id="resetPasswordTitle">איפוס סיסמה</h3>
+      <p class="muted">נשלח לך קישור לאיפוס הסיסמה לאימייל שלך.</p>
+      <label class="field">
+        <span>כתובת אימייל</span>
+        <input id="resetPasswordEmail" type="email" placeholder="your@email.com" />
+      </label>
+      <div class="dialog-actions">
+        <button id="sendResetEmailBtn" class="btn-primary">שלח קישור</button>
+        <button id="closeResetPasswordBtn" class="btn-secondary">ביטול</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="updatePasswordDialog" class="app-dialog" aria-labelledby="updatePasswordTitle">
+    <div class="dialog-content">
+      <h3 id="updatePasswordTitle">הגדרת סיסמה חדשה</h3>
+      <p class="muted">הזן את הסיסמה החדשה שלך.</p>
+      <label class="field">
+        <span>סיסמה חדשה</span>
+        <input id="newPassword" type="password" placeholder="לפחות 6 תווים" />
+      </label>
+      <label class="field">
+        <span>אימות סיסמה</span>
+        <input id="newPasswordConfirm" type="password" placeholder="הזן שוב את הסיסמה" />
+      </label>
+      <div class="dialog-actions">
+        <button id="updatePasswordBtn" class="btn-primary">שמור סיסמה</button>
+        <button id="closeUpdatePasswordBtn" class="btn-secondary">ביטול</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Global Status Message Toast -->
+  <div id="statusMessage" class="status-message hidden" aria-live="polite" role="status"></div>
 
   <!-- MIGRATION: Supabase client library replacing Apps Script backend -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

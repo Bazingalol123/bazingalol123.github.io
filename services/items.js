@@ -143,6 +143,12 @@ export async function addItemToSupabase(payload) {
  * @param {boolean} purchased - New purchased state
  */
 export async function toggleItem(rowId, purchased) {
+  // BUG FIX: Prevent toggling items with temp IDs (not yet synced to database)
+  if (typeof rowId === 'string' && rowId.startsWith('temp-')) {
+    console.warn('[items.js] Skipping toggle for temp item:', rowId);
+    throw new Error('הפריט עדיין בתהליך סנכרון. נסה שוב בעוד רגע.');
+  }
+
   const { error } = await sb
     .from('items')
     .update({ purchased, updated_by: currentUser.id })
@@ -155,6 +161,12 @@ export async function toggleItem(rowId, purchased) {
  * @param {Object} patch - Item update data
  */
 export async function updateItemInSupabase(patch) {
+  // BUG FIX: Prevent updating items with temp IDs (not yet synced to database)
+  if (typeof patch.rowId === 'string' && patch.rowId.startsWith('temp-')) {
+    console.warn('[items.js] Skipping update for temp item:', patch.rowId);
+    throw new Error('הפריט עדיין בתהליך סנכרון. נסה שוב בעוד רגע.');
+  }
+
   const responsibleGroupId = document.getElementById('editResponsibleGroup')?.value || null;
   const { error } = await sb
     .from('items')

@@ -12,13 +12,16 @@ import {
   hideMessage,
   normalizeItem 
 } from './utils/helpers.js';
-import { 
-  currentUser, 
-  sendMagicLink, 
-  signOut, 
-  updateAuthUI, 
-  updateDisplayName, 
-  initAuth 
+import {
+  currentUser,
+  signUp,
+  signIn,
+  resetPassword,
+  updatePassword,
+  signOut,
+  updateAuthUI,
+  updateDisplayName,
+  initAuth
 } from './services/auth.js';
 import { 
   loadItems, 
@@ -32,18 +35,23 @@ import {
   qtyDebounceTimers,
   qtyOriginalValues
 } from './services/items.js';
-import { 
-  loadLists, 
-  createList, 
-  renameList, 
-  duplicateList, 
-  clearCompleted, 
+import {
+  loadLists,
+  createList,
+  renameList,
+  duplicateList,
+  clearCompleted,
   deleteList,
   generateInviteQr,
   checkInviteToken,
   loadResponsibilityGroups,
   createResponsibilityGroup,
-  deleteResponsibilityGroup
+  updateResponsibilityGroup,
+  deleteResponsibilityGroup,
+  getListMembers,
+  addGroupMember,
+  removeGroupMember,
+  GROUP_COLORS
 } from './services/lists.js';
 import { 
   renderItems, 
@@ -52,22 +60,25 @@ import {
   renderQuickAddCarousel,
   setQuickAddMode
 } from './components/render.js';
-import { 
-  showConfirmDialog, 
-  showPromptDialog, 
-  updateConnectionChip, 
+import {
+  showConfirmDialog,
+  showPromptDialog,
+  updateConnectionChip,
   setSyncChip,
   initFilterToggle,
   openListActions,
   renderResponsibilityOptions,
-  renderManageGroupsDialog
+  renderResponsibilityFilter,
+  renderManageGroupsDialog,
+  showMemberPicker
 } from './components/ui.js';
 
 // OneSignal App ID
 const ONESIGNAL_APP_ID = 'bfa7608a-9ec5-49f8-93e9-9f57823db28b';
 
-// Cached responsibility groups
+// Cached responsibility groups and list members
 let cachedGroups = [];
+let cachedListMembers = [];
 
 // List actions context
 let listActionsContext = { listId: null, listName: '' };
@@ -359,6 +370,7 @@ function openEditDialog(item) {
 
 async function handleSaveEditedItem(event) {
   event.preventDefault();
+  const editRespGroup = document.getElementById('editResponsibleGroup');
   const patch = {
     rowId: els.editRowId.value,
     name: els.editName.value,
@@ -366,7 +378,8 @@ async function handleSaveEditedItem(event) {
     category: els.editCategory.value,
     notes: els.editNotes.value,
     price: els.editPrice.value,
-    image: els.editImage.value
+    image: els.editImage.value,
+    responsibleGroupId: editRespGroup?.value || null
   };
   
   const prev = state.items.find(i => i.rowId === patch.rowId);
@@ -427,14 +440,18 @@ async function handleSwitchList(listId) {
   renderLists(handleSwitchList, handleOpenListActions);
   switchTab('list');
   await loadItems();
+  reRenderAll();
   subscribeToList(listId, (payload) => {
     handleRealtimeItemChange(payload);
     reRenderAll();
     setSyncChip('מסונכרן', 'connected');
   }, setSyncChip);
   
-  cachedGroups = await loadResponsibilityGroups();
+  // Load and render responsibility groups
+  state.responsibilityGroups = await loadResponsibilityGroups();
+  cachedGroups = state.responsibilityGroups;
   renderResponsibilityOptions(cachedGroups);
+  renderResponsibilityFilter(cachedGroups);
 }
 
 function handleOpenListActions(listId, listName) {
@@ -445,6 +462,25 @@ function handleOpenListActions(listId, listName) {
 
 function bindEvents() {
   console.log('Binding events. Sample element check - homeAddListBtn:', els.homeAddListBtn);
+  // Landing page auth triggers
+  if (els.landingSignInBtn) {
+    els.landingSignInBtn.addEventListener('click', () => {
+      document.getElementById('authModeSignIn')?.click();
+      document.getElementById('authDialog')?.showModal();
+    });
+  }
+
+  if (els.landingSignUpBtn) {
+    els.landingSignUpBtn.addEventListener('click', () => {
+      document.getElementById('authModeSignUp')?.click();
+      document.getElementById('authDialog')?.showModal();
+    });
+  }
+
+  document.getElementById('closeAuthDialogBtn')?.addEventListener('click', () => {
+    document.getElementById('authDialog')?.close();
+  });
+
   // Theme toggle
   function toggleTheme() {
     document.body.classList.toggle('dark-mode');
@@ -458,15 +494,134 @@ function bindEvents() {
   if (els.globalThemeToggle) els.globalThemeToggle.addEventListener('click', toggleTheme);
 
   // Auth events
-  document.getElementById('sendMagicLinkBtn')?.addEventListener('click', async () => {
-    const email = document.getElementById('authEmailInput').value.trim();
-    if (!email) return showMessage('נא להזין כתובת אימייל.', true);
+  // === Auth Mode Toggle ===
+  document.getElementById('authModeSignIn')?.addEventListener('click', () => {
+    document.getElementById('authModeSignIn').classList.add('active');
+    document.getElementById('authModeSignUp').classList.remove('active');
+    document.getElementById('signInFormFields').style.display = 'block';
+    document.getElementById('signUpFormFields').style.display = 'none';
+  });
+
+  document.getElementById('authModeSignUp')?.addEventListener('click', () => {
+    document.getElementById('authModeSignUp').classList.add('active');
+    document.getElementById('authModeSignIn').classList.remove('active');
+    document.getElementById('signUpFormFields').style.display = 'block';
+    document.getElementById('signInFormFields').style.display = 'none';
+  });
+
+  // === Sign In ===
+  document.getElementById('signInBtn')?.addEventListener('click', async () => {
+    const email = document.getElementById('signInEmail').value.trim();
+    const password = document.getElementById('signInPassword').value;
+    
+    if (!email || !password) {
+      return showMessage('נא להזין אימייל וסיסמה.', true);
+    }
+    
     try {
-      await sendMagicLink(email);
-      showMessage('קישור כניסה נשלח לאימייל שלך! בדוק את תיבת הדואר.');
+      showLoading();
+      await signIn(email, password);
+      showMessage('התחברת בהצלחה!');
+    } catch (err) {
+      if (err.message.includes('Invalid login credentials')) {
+        showMessage('אימייל או סיסמה שגויים.', true);
+      } else {
+        showMessage(err.message, true);
+      }
+    } finally {
+      hideLoading();
+    }
+  });
+
+  // === Sign Up ===
+  document.getElementById('signUpBtn')?.addEventListener('click', async () => {
+    const displayName = document.getElementById('signUpDisplayName').value.trim();
+    const email = document.getElementById('signUpEmail').value.trim();
+    const password = document.getElementById('signUpPassword').value;
+    const passwordConfirm = document.getElementById('signUpPasswordConfirm').value;
+    
+    if (!email || !password) {
+      return showMessage('נא להזין אימייל וסיסמה.', true);
+    }
+    
+    if (password.length < 6) {
+      return showMessage('הסיסמה חייבת להכיל לפחות 6 תווים.', true);
+    }
+    
+    if (password !== passwordConfirm) {
+      return showMessage('הסיסמאות אינן תואמות.', true);
+    }
+    
+    try {
+      showLoading();
+      await signUp(email, password, displayName);
+      document.getElementById('authDialog')?.close();
+      showMessage('נרשמת בהצלחה! בדוק את האימייל שלך לאימות.', false, 5000);
+    } catch (err) {
+      if (err.message.includes('User already registered')) {
+        showMessage('המשתמש כבר קיים. נסה להתחבר.', true);
+      } else {
+        showMessage(err.message, true);
+      }
+    } finally {
+      hideLoading();
+    }
+  });
+
+  // === Forgot Password ===
+  document.getElementById('forgotPasswordBtn')?.addEventListener('click', () => {
+    document.getElementById('resetPasswordDialog')?.showModal();
+  });
+
+  document.getElementById('sendResetEmailBtn')?.addEventListener('click', async () => {
+    const email = document.getElementById('resetPasswordEmail').value.trim();
+    if (!email) {
+      return showMessage('נא להזין כתובת אימייל.', true);
+    }
+    
+    try {
+      showLoading();
+      await resetPassword(email);
+      document.getElementById('resetPasswordDialog')?.close();
+      showMessage('נשלח קישור לאיפוס סיסמה לאימייל שלך!');
     } catch (err) {
       showMessage(err.message, true);
+    } finally {
+      hideLoading();
     }
+  });
+
+  document.getElementById('closeResetPasswordBtn')?.addEventListener('click', () => {
+    document.getElementById('resetPasswordDialog')?.close();
+  });
+
+  // === Update Password (after reset) ===
+  document.getElementById('updatePasswordBtn')?.addEventListener('click', async () => {
+    const newPassword = document.getElementById('newPassword').value;
+    const newPasswordConfirm = document.getElementById('newPasswordConfirm').value;
+    
+    if (!newPassword || newPassword.length < 6) {
+      return showMessage('הסיסמה חייבת להכיל לפחות 6 תווים.', true);
+    }
+    
+    if (newPassword !== newPasswordConfirm) {
+      return showMessage('הסיסמאות אינן תואמות.', true);
+    }
+    
+    try {
+      showLoading();
+      await updatePassword(newPassword);
+      document.getElementById('updatePasswordDialog')?.close();
+      showMessage('הסיסמה עודכנה בהצלחה!');
+    } catch (err) {
+      showMessage(err.message, true);
+    } finally {
+      hideLoading();
+    }
+  });
+
+  document.getElementById('closeUpdatePasswordBtn')?.addEventListener('click', () => {
+    document.getElementById('updatePasswordDialog')?.close();
   });
 
   document.getElementById('signOutBtn')?.addEventListener('click', async () => {
@@ -489,34 +644,115 @@ function bindEvents() {
     }
   });
 
-  // List management
+  // GROUPS: Manage responsibility groups
   document.getElementById('listActionManageGroups')?.addEventListener('click', async () => {
     els.listActionsDialog.close();
-    cachedGroups = await loadResponsibilityGroups();
-    renderManageGroupsDialog(cachedGroups, async (groupId) => {
-      await deleteResponsibilityGroup(groupId);
-      cachedGroups = await loadResponsibilityGroups();
-      renderManageGroupsDialog(cachedGroups, handleDeleteGroup);
-    });
+    state.responsibilityGroups = await loadResponsibilityGroups();
+    cachedGroups = state.responsibilityGroups;
+    cachedListMembers = await getListMembers(state.currentListId);
+    renderManageGroupsDialog(
+      cachedGroups,
+      handleDeleteGroup,
+      null, // onEdit (not implemented yet)
+      handleAddMember,
+      handleRemoveMember,
+      cachedListMembers
+    );
     document.getElementById('manageGroupsDialog')?.showModal();
   });
 
   document.getElementById('addGroupBtn')?.addEventListener('click', async () => {
-    const label = await showPromptDialog('קבוצה חדשה', 'שם הקבוצה (למשל: יוסי ודנה)', '');
+    const label = await showPromptDialog('קבוצה חדשה', 'שם הקבוצה (למשל: משפחת כהן)', '');
     if (!label) return;
-    await createResponsibilityGroup(label);
-    cachedGroups = await loadResponsibilityGroups();
-    renderManageGroupsDialog(cachedGroups, handleDeleteGroup);
+    try {
+      await createResponsibilityGroup(label);
+      await refreshGroupsDialog();
+    } catch (error) {
+      console.error('Error creating group:', error);
+    }
   });
 
   async function handleDeleteGroup(groupId) {
-    await deleteResponsibilityGroup(groupId);
-    cachedGroups = await loadResponsibilityGroups();
-    renderManageGroupsDialog(cachedGroups, handleDeleteGroup);
+    const result = await deleteResponsibilityGroup(groupId);
+    if (result !== false) {
+      await refreshGroupsDialog();
+      reRenderAll(); // Re-render items to update any that had this group
+    }
+  }
+
+  async function handleAddMember(groupId, groupLabel, currentMembers, availableMembers) {
+    const userId = await showMemberPicker(groupId, groupLabel, currentMembers, availableMembers);
+    if (userId) {
+      const success = await addGroupMember(groupId, userId);
+      if (success) {
+        await refreshGroupsDialog();
+      }
+    }
+  }
+
+  async function handleRemoveMember(groupId, userId) {
+    const confirmed = await showConfirmDialog('הסרת חבר', 'האם להסיר חבר זה מהקבוצה?');
+    if (confirmed) {
+      const success = await removeGroupMember(groupId, userId);
+      if (success) {
+        await refreshGroupsDialog();
+      }
+    }
+  }
+
+  async function refreshGroupsDialog() {
+    state.responsibilityGroups = await loadResponsibilityGroups();
+    cachedGroups = state.responsibilityGroups;
+    cachedListMembers = await getListMembers(state.currentListId);
+    renderManageGroupsDialog(
+      cachedGroups,
+      handleDeleteGroup,
+      null,
+      handleAddMember,
+      handleRemoveMember,
+      cachedListMembers
+    );
+    renderResponsibilityOptions(cachedGroups);
+    renderResponsibilityFilter(cachedGroups);
   }
 
   document.getElementById('closeManageGroupsBtn')?.addEventListener('click', () => {
     document.getElementById('manageGroupsDialog')?.close();
+  });
+
+  // GROUPS: Quick create from dropdowns
+  async function handleQuickCreateGroup(selectElement) {
+    const label = await showPromptDialog('קבוצה חדשה', 'שם הקבוצה (למשל: משפחת כהן)', '');
+    if (!label) {
+      selectElement.value = '';
+      return;
+    }
+    try {
+      const newGroupId = await createResponsibilityGroup(label);
+      state.responsibilityGroups = await loadResponsibilityGroups();
+      cachedGroups = state.responsibilityGroups;
+      renderResponsibilityOptions(cachedGroups);
+      renderResponsibilityFilter(cachedGroups);
+      selectElement.value = newGroupId; // Auto-select newly created group
+      showMessage(`קבוצה "${label}" נוצרה ונבחרה`);
+    } catch (error) {
+      selectElement.value = '';
+      console.error('Error creating group:', error);
+    }
+  }
+
+  // Handle quick create from Add dialog
+  document.getElementById('addResponsibleGroup')?.addEventListener('change', function(e) {
+    if (e.target.value === '_create_new') {
+      handleQuickCreateGroup(e.target);
+    }
+  });
+
+  // Handle quick create from Edit dialog
+  document.getElementById('editResponsibleGroup')?.addEventListener('change', function(e) {
+    if (e.target.value === '_create_new') {
+      handleQuickCreateGroup(e.target);
+    }
   });
 
   // Add item form
@@ -543,13 +779,15 @@ function bindEvents() {
       e.stopPropagation();
       const isOpen = els.fabContainer.classList.toggle('open');
       els.mainFab.setAttribute('aria-expanded', isOpen);
-      els.fabMenu.setAttribute('aria-hidden', !isOpen);
+      // Don't set aria-hidden when menu contains focusable elements
+      // els.fabMenu.setAttribute('aria-hidden', !isOpen);
     });
     document.addEventListener('click', (e) => {
       if (els.fabContainer && els.fabContainer.classList.contains('open') && !els.fabContainer.contains(e.target)) {
         els.fabContainer.classList.remove('open');
         els.mainFab.setAttribute('aria-expanded', 'false');
-        els.fabMenu.setAttribute('aria-hidden', 'true');
+        // Don't set aria-hidden when menu contains focusable elements
+        // els.fabMenu.setAttribute('aria-hidden', 'true');
       }
     });
   }
@@ -559,6 +797,22 @@ function bindEvents() {
     els.addItemForm.reset();
     els.addDialog?.showModal();
   });
+
+  // BUG FIX: Shop Mode functionality
+  if (els.fabShopMode) {
+    els.fabShopMode.addEventListener('click', () => {
+      els.fabContainer.classList.remove('open');
+      const isShopMode = document.body.classList.toggle('shop-mode');
+      showMessage(isShopMode ? 'מצב קנייה הופעל 🛒' : 'מצב רגיל הופעל');
+    });
+  }
+
+  // BUG FIX: Add missing cancel button handler for Add Item dialog
+  if (els.closeAddDialogBtn) {
+    els.closeAddDialogBtn.addEventListener('click', () => {
+      els.addDialog?.close();
+    });
+  }
 
   // Edit dialog
   els.editItemForm.addEventListener('submit', handleSaveEditedItem);
@@ -588,12 +842,135 @@ function bindEvents() {
     reRenderAll();
   });
 
+  // GROUPS: Responsibility filter
+  const responsibilityFilterEl = document.getElementById('responsibilityFilter');
+  if (responsibilityFilterEl) {
+    responsibilityFilterEl.addEventListener('change', (e) => {
+      state.filters.responsibility = e.target.value;
+      reRenderAll();
+    });
+  }
+
   // Home list management
-  els.homeAddListBtn?.addEventListener('click', async () => {
+  const handleCreateNewList = async () => {
     const name = await showPromptDialog('רשימה חדשה', 'שם הרשימה', 'רשימת קניות');
     if (!name) return;
     const newListId = await createList(name);
-    if (newListId) await handleSwitchList(newListId);
+    if (newListId) {
+      await handleSwitchList(newListId);
+      // Wait for UI to update, then show First Action Tooltip
+      setTimeout(() => {
+        const fab = document.getElementById('mainFab');
+        const tooltip = document.createElement('div');
+        tooltip.className = 'first-action-tooltip';
+        tooltip.innerHTML = `
+          <strong>הגעתם לרשימה החדשה!</strong>
+          <br>לחצו כאן או על פריט מהיר כדי להוסיף את הפריט הראשון.
+          <button class="tooltip-close">הבנתי</button>
+        `;
+        document.body.appendChild(tooltip);
+        
+        // Position tooltip near the FAB
+        if (fab) {
+          const rect = fab.getBoundingClientRect();
+          tooltip.style.position = 'fixed';
+          tooltip.style.bottom = (window.innerHeight - rect.top + 16) + 'px';
+          tooltip.style.left = '24px';
+          tooltip.style.zIndex = '1000';
+          
+          tooltip.querySelector('.tooltip-close').onclick = () => tooltip.remove();
+          setTimeout(() => { if (document.body.contains(tooltip)) tooltip.remove(); }, 8000);
+        }
+      }, 500);
+    }
+  };
+
+  els.homeAddListBtn?.addEventListener('click', handleCreateNewList);
+  document.getElementById('onboardingCreateListBtn')?.addEventListener('click', handleCreateNewList);
+
+  document.getElementById('onboardingJoinBtn')?.addEventListener('click', async () => {
+    const link = await showPromptDialog('הצטרפות לרשימה', 'הדביקו קישור הזמנה או קוד', '');
+    if (!link) return;
+    
+    // Extract token if it's a full URL
+    let token = link;
+    try {
+      if (link.includes('http')) {
+        const url = new URL(link);
+        token = url.searchParams.get('invite') || link;
+      }
+    } catch(e) {}
+    
+    if (token) {
+      // Temporarily mock the URL search params so checkInviteToken works
+      const originalUrl = window.location.href;
+      window.history.replaceState({}, '', `?invite=${token}`);
+      const listId = await checkInviteToken();
+      if (!listId) {
+        window.history.replaceState({}, '', originalUrl.split('?')[0]);
+      } else {
+        await handleSwitchList(listId);
+      }
+    }
+  });
+
+  // QR Scanner logic
+  let html5QrcodeScanner = null;
+
+  const startQrScanner = () => {
+    document.getElementById('qrScannerDialog')?.showModal();
+    if (!html5QrcodeScanner) {
+      html5QrcodeScanner = new Html5Qrcode("qr-reader");
+    }
+    
+    html5QrcodeScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      async (decodedText, decodedResult) => {
+        // Stop scanner
+        await html5QrcodeScanner.stop();
+        document.getElementById('qrScannerDialog')?.close();
+        
+        let token = decodedText;
+        try {
+          if (decodedText.includes('http')) {
+            const url = new URL(decodedText);
+            token = url.searchParams.get('invite') || decodedText;
+          }
+        } catch(e) {}
+        
+        if (token) {
+          const originalUrl = window.location.href;
+          window.history.replaceState({}, '', `?invite=${token}`);
+          const listId = await checkInviteToken();
+          if (!listId) {
+            window.history.replaceState({}, '', originalUrl.split('?')[0]);
+          } else {
+            await handleSwitchList(listId);
+          }
+        }
+      },
+      (errorMessage) => {
+        // parse error, ignore
+      }
+    ).catch(err => {
+      showMessage('שגיאה בהפעלת מצלמה: ' + err, true);
+    });
+  };
+
+  document.getElementById('onboardingJoinQrBtn')?.addEventListener('click', startQrScanner);
+  els.fabScanQr?.addEventListener('click', () => {
+    els.fabContainer.classList.remove('open');
+    startQrScanner();
+  });
+
+  document.getElementById('closeQrScannerBtn')?.addEventListener('click', async () => {
+    if (html5QrcodeScanner) {
+      try {
+        await html5QrcodeScanner.stop();
+      } catch (e) {}
+    }
+    document.getElementById('qrScannerDialog')?.close();
   });
 
   // List actions
@@ -706,13 +1083,18 @@ async function boot() {
       if (state.currentListId) {
         console.log('[BOOT] Current list ID exists:', state.currentListId);
         await loadItems();
+        reRenderAll();
         subscribeToList(state.currentListId, (payload) => {
           handleRealtimeItemChange(payload);
           reRenderAll();
           setSyncChip('מסונכרן', 'connected');
         }, setSyncChip);
-        cachedGroups = await loadResponsibilityGroups();
+        state.responsibilityGroups = await loadResponsibilityGroups();
+        cachedGroups = state.responsibilityGroups;
         renderResponsibilityOptions(cachedGroups);
+        renderResponsibilityFilter(cachedGroups);
+        
+        switchTab('list');
       } else {
         console.log('[BOOT] No current list ID');
       }

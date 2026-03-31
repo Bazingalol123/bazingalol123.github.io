@@ -133,7 +133,7 @@ export function openListActions(listId, listName) {
 }
 
 /**
- * Render responsibility options in select dropdowns
+ * Render responsibility options in select dropdowns with quick create option
  * @param {Array} groups - Responsibility groups
  */
 export function renderResponsibilityOptions(groups) {
@@ -141,52 +141,272 @@ export function renderResponsibilityOptions(groups) {
     const el = document.getElementById(id);
     if (!el) return;
     const current = el.value;
-    el.innerHTML = '<option value="">ללא אחראי</option>';
+    
+    // Build options HTML
+    let html = '<option value="_create_new">+ קבוצה חדשה</option>';
+    html += '<option value="">ללא אחראי</option>';
+    
     groups.forEach(g => {
-      const opt = document.createElement('option');
-      opt.value = g.id;
-      opt.textContent = g.label;
-      el.appendChild(opt);
+      const colorDot = g.color ? `<span style="color: ${g.color}">●</span> ` : '';
+      html += `<option value="${g.id}">${colorDot}${escapeHtml(g.label)}</option>`;
     });
+    
+    el.innerHTML = html;
     el.value = current;
   });
 }
 
 /**
- * Render manage groups dialog
+ * Render responsibility filter dropdown
+ * @param {Array} groups - Responsibility groups
+ */
+export function renderResponsibilityFilter(groups) {
+  const el = document.getElementById('responsibilityFilter');
+  if (!el) return;
+  
+  const current = el.value;
+  let html = '<option value="all">כל האחריות</option>';
+  html += '<option value="unassigned">ללא אחראי</option>';
+  html += '<option value="assigned">עם אחראי</option>';
+  
+  if (groups.length > 0) {
+    html += '<optgroup label="קבוצות">';
+    groups.forEach(g => {
+      const emoji = g.color ? getColorEmoji(g.color) : '●';
+      html += `<option value="${g.id}">${emoji} ${escapeHtml(g.label)}</option>`;
+    });
+    html += '</optgroup>';
+  }
+  
+  el.innerHTML = html;
+  el.value = current;
+}
+
+/**
+ * Get emoji for color value
+ * @param {string} color - Color hex value
+ * @returns {string} Emoji
+ */
+function getColorEmoji(color) {
+  const colorMap = {
+    '#8B5CF6': '🟣',
+    '#10B981': '🟢',
+    '#3B82F6': '🔵',
+    '#F59E0B': '🟠',
+    '#EF4444': '🔴',
+    '#EC4899': '🩷',
+    '#6366F1': '🔮',
+    '#14B8A6': '🩵'
+  };
+  return colorMap[color.toUpperCase()] || '●';
+}
+
+/**
+ * Render manage groups dialog with full card UI
  * @param {Array} groups - Responsibility groups
  * @param {Function} onDelete - Delete callback
+ * @param {Function} onEdit - Edit callback (optional)
+ * @param {Function} onAddMember - Add member callback
+ * @param {Function} onRemoveMember - Remove member callback
+ * @param {Array} listMembers - Available list members for adding
  */
-export function renderManageGroupsDialog(groups, onDelete) {
+export function renderManageGroupsDialog(groups, onDelete, onEdit = null, onAddMember = null, onRemoveMember = null, listMembers = []) {
   const container = document.getElementById('groupsList');
   if (!container) return;
   container.innerHTML = '';
 
+  // Empty state
   if (!groups.length) {
-    container.innerHTML = '<p class="muted" style="text-align:center;">אין קבוצות עדיין.</p>';
+    container.innerHTML = `
+      <div class="empty-state" style="padding: 32px 16px; text-align: center;">
+        <div style="font-size: 3rem; margin-bottom: 12px;">👥</div>
+        <p style="margin: 0 0 8px; font-weight: 600; color: var(--text);">אין קבוצות עדיין</p>
+        <p class="muted" style="margin: 0; font-size: 0.9rem;">צור קבוצה כדי להקצות אחריות לפריטים ברשימה</p>
+      </div>
+    `;
     return;
   }
 
+  // Render group cards
   groups.forEach(group => {
     const members = group.responsibility_group_members || [];
     const memberNames = members.map(m => m.profiles?.display_name ?? '').filter(Boolean).join(', ');
-    const row = document.createElement('div');
-    row.className = 'sync-line';
-    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;';
-    row.innerHTML = `
-      <div>
-        <strong>${escapeHtml(group.label)}</strong>
-        ${memberNames ? `<p class="muted" style="margin:2px 0 0; font-size:0.8rem;">${escapeHtml(memberNames)}</p>` : ''}
+    const itemCount = group.assignedItemsCount || 0;
+    const itemText = itemCount === 1 ? 'פריט מוקצה' : `${itemCount} פריטים מוקצים`;
+    
+    const card = document.createElement('div');
+    card.className = 'group-card';
+    card.dataset.groupId = group.id;
+    card.style.cssText = '--group-color: ' + (group.color || '#6B7280');
+    
+    // Build members list HTML (only show in expanded state)
+    let membersListHtml = '';
+    if (members.length > 0) {
+      membersListHtml = members.map(m => {
+        const name = m.profiles?.display_name || 'משתמש';
+        const emoji = m.profiles?.avatar_emoji || '👤';
+        return `
+          <div class="group-member-item">
+            <span class="member-info">
+              <span class="member-emoji">${emoji}</span>
+              <span class="member-name">${escapeHtml(name)}</span>
+            </span>
+            <button class="member-remove-btn" data-user-id="${m.user_id}" data-group-id="${group.id}" title="הסר חבר">×</button>
+          </div>
+        `;
+      }).join('');
+    } else {
+      membersListHtml = '<p class="group-no-members">אין חברים בקבוצה</p>';
+    }
+    
+    card.innerHTML = `
+      <div class="group-indicator" style="background: ${group.color || '#6B7280'};"></div>
+      <div class="group-content">
+        <h4 class="group-label">${escapeHtml(group.label)}</h4>
+        <p class="group-meta">${memberNames || 'אין חברים'}</p>
+        <p class="group-items-count">${itemText}</p>
+        
+        <!-- Expanded content (initially hidden) -->
+        <div class="group-expanded-content" style="display: none;">
+          <div class="group-members-section">
+            <h5 class="group-section-title">חברי הקבוצה</h5>
+            <div class="group-members-list">
+              ${membersListHtml}
+            </div>
+            ${onAddMember ? '<button class="group-add-member-btn" data-group-id="' + group.id + '">+ הוסף חבר</button>' : ''}
+          </div>
+        </div>
       </div>
-      <button class="delete-btn" data-group-id="${group.id}" title="מחק קבוצה">🗑</button>
+      <button class="group-delete-btn" data-group-id="${group.id}" title="מחק קבוצה" aria-label="מחק את ${escapeHtml(group.label)}">🗑</button>
     `;
-    row.querySelector('.delete-btn').addEventListener('click', async () => {
-      const confirmed = await showConfirmDialog('מחיקת קבוצה', `למחוק את "${group.label}"?`);
+    
+    // Delete button handler
+    const deleteBtn = card.querySelector('.group-delete-btn');
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const message = itemCount > 0
+        ? `⚠️ ${itemCount} פריטים מוקצים יאבדו את האחראי. האם להמשיך?`
+        : `למחוק את "${group.label}"?`;
+      
+      const confirmed = await showConfirmDialog('מחיקת קבוצה', message);
       if (confirmed && onDelete) {
-        await onDelete(group.id);
+        const result = await onDelete(group.id);
+        if (result !== false) {
+          card.remove();
+        }
       }
     });
-    container.appendChild(row);
+    
+    // Toggle expanded content when card is clicked
+    const expandedContent = card.querySelector('.group-expanded-content');
+    const groupContent = card.querySelector('.group-content');
+    card.addEventListener('click', (e) => {
+      // Don't toggle if clicking delete button or member action buttons
+      if (e.target.closest('.group-delete-btn') ||
+          e.target.closest('.member-remove-btn') ||
+          e.target.closest('.group-add-member-btn')) {
+        return;
+      }
+      
+      const isExpanded = expandedContent.style.display !== 'none';
+      expandedContent.style.display = isExpanded ? 'none' : 'block';
+      card.classList.toggle('expanded', !isExpanded);
+    });
+    
+    // Add member button handler
+    if (onAddMember) {
+      const addMemberBtn = card.querySelector('.group-add-member-btn');
+      addMemberBtn?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await onAddMember(group.id, group.label, members, listMembers);
+      });
+    }
+    
+    // Remove member button handlers
+    if (onRemoveMember) {
+      const removeBtns = card.querySelectorAll('.member-remove-btn');
+      removeBtns.forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const userId = btn.dataset.userId;
+          const groupId = btn.dataset.groupId;
+          await onRemoveMember(groupId, userId);
+        });
+      });
+    }
+    
+    container.appendChild(card);
+  });
+}
+
+/**
+ * Show member picker dialog
+ * @param {string} groupId - Group ID
+ * @param {string} groupLabel - Group label
+ * @param {Array} currentMembers - Current group members
+ * @param {Array} availableMembers - All list members
+ * @returns {Promise<string|null>} Selected user ID or null
+ */
+export function showMemberPicker(groupId, groupLabel, currentMembers, availableMembers) {
+  return new Promise((resolve) => {
+    // Filter out members already in the group
+    const currentMemberIds = new Set(currentMembers.map(m => m.user_id));
+    const availableToAdd = availableMembers.filter(m => !currentMemberIds.has(m.userId));
+    
+    if (availableToAdd.length === 0) {
+      showConfirmDialog('אין חברים זמינים', 'כל חברי הרשימה כבר נמצאים בקבוצה זו.');
+      resolve(null);
+      return;
+    }
+    
+    // Create a custom dialog
+    const dialog = document.createElement('dialog');
+    dialog.className = 'app-dialog member-picker-dialog';
+    dialog.innerHTML = `
+      <div class="dialog-content">
+        <h3>הוסף חבר לקבוצה "${escapeHtml(groupLabel)}"</h3>
+        <p class="muted">בחר משתמש להוספה לקבוצה</p>
+        <div class="member-picker-list">
+          ${availableToAdd.map(member => `
+            <button class="member-picker-item" data-user-id="${member.userId}">
+              <span class="member-emoji">${member.avatarEmoji}</span>
+              <span class="member-name">${escapeHtml(member.displayName)}</span>
+            </button>
+          `).join('')}
+        </div>
+        <button class="btn-secondary" id="cancelMemberPicker" style="margin-top: 16px;">ביטול</button>
+      </div>
+    `;
+    
+    document.body.appendChild(dialog);
+    
+    function cleanup() {
+      dialog.close();
+      dialog.remove();
+    }
+    
+    // Handle member selection
+    const memberBtns = dialog.querySelectorAll('.member-picker-item');
+    memberBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const userId = btn.dataset.userId;
+        cleanup();
+        resolve(userId);
+      });
+    });
+    
+    // Handle cancel
+    dialog.querySelector('#cancelMemberPicker')?.addEventListener('click', () => {
+      cleanup();
+      resolve(null);
+    });
+    
+    dialog.addEventListener('close', () => {
+      cleanup();
+      resolve(null);
+    });
+    
+    dialog.showModal();
   });
 }
 

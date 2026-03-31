@@ -1,4 +1,4 @@
-// Authentication service - Supabase magic link auth
+// Authentication service - Supabase email/password auth
 import { sb } from '../api/supabase.js';
 import { state } from '../store/state.js';
 import { showMessage } from '../utils/helpers.js';
@@ -7,13 +7,57 @@ import { showMessage } from '../utils/helpers.js';
 export let currentUser = null;
 
 /**
- * Send magic link to email for passwordless authentication
+ * Sign up new user with email and password
+ * @param {string} email - User email
+ * @param {string} password - User password
+ * @param {string} displayName - Optional display name
+ */
+export async function signUp(email, password, displayName = '') {
+  const { data, error } = await sb.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        display_name: displayName || email.split('@')[0]
+      }
+    }
+  });
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Sign in existing user with email and password
+ * @param {string} email - User email
+ * @param {string} password - User password
+ */
+export async function signIn(email, password) {
+  const { data, error } = await sb.auth.signInWithPassword({
+    email,
+    password
+  });
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Send password reset email
  * @param {string} email - User email
  */
-export async function sendMagicLink(email) {
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: window.location.href }
+export async function resetPassword(email) {
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href
+  });
+  if (error) throw error;
+}
+
+/**
+ * Update user password (for password reset flow)
+ * @param {string} newPassword - New password
+ */
+export async function updatePassword(newPassword) {
+  const { error } = await sb.auth.updateUser({
+    password: newPassword
   });
   if (error) throw error;
 }
@@ -36,28 +80,54 @@ export async function signOut() {
 export async function updateAuthUI(user) {
   console.log('[updateAuthUI] START, user:', user?.email);
   currentUser = user;
-  const signInForm = document.getElementById('signInForm');
+  
+  const landingPage = document.getElementById('landingPage');
+  const appLayout = document.getElementById('appLayout');
+  const bottomNav = document.querySelector('.bottom-nav');
+  const authDialog = document.getElementById('authDialog');
   const signedInPanel = document.getElementById('signedInPanel');
   const authStatusText = document.getElementById('authStatusText');
 
   if (!user) {
-    console.log('[updateAuthUI] No user, showing sign-in form');
-    if (signInForm) signInForm.style.display = 'block';
-    if (signedInPanel) signedInPanel.style.display = 'none';
-    if (authStatusText) authStatusText.textContent = 'התחברו עם קישור קסם שנשלח לאימייל שלכם.';
+    console.log('[updateAuthUI] No user, showing landing page');
+    if (landingPage) landingPage.style.display = 'flex';
+    if (appLayout) appLayout.style.display = 'none';
+    if (bottomNav) bottomNav.style.display = 'none';
+    if (authStatusText) authStatusText.textContent = 'התחבר או הרשם כדי להתחיל.';
     return;
   }
 
   console.log('[updateAuthUI] Fetching profile from database for user:', user.id);
-  const { data: profile, error } = await sb
-    .from('profiles')
-    .select('display_name, avatar_emoji')
-    .eq('id', user.id)
-    .single();
+  
+  // Use Promise.race to prevent hanging if the database fetch gets stuck
+  let profile = null;
+  let error = null;
+  
+  try {
+    const fetchPromise = sb
+      .from('profiles')
+      .select('display_name, avatar_emoji')
+      .eq('id', user.id)
+      .single();
+      
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Profile fetch timeout')), 5000)
+    );
+    
+    const result = await Promise.race([fetchPromise, timeoutPromise]);
+    profile = result.data;
+    error = result.error;
+  } catch (err) {
+    console.warn('[updateAuthUI] Profile fetch warning/timeout:', err.message);
+    error = err;
+  }
   
   console.log('[updateAuthUI] Profile fetch result - data:', profile, 'error:', error);
 
-  if (signInForm) signInForm.style.display = 'none';
+  if (landingPage) landingPage.style.display = 'none';
+  if (appLayout) appLayout.style.display = ''; // Fallback to CSS display: grid
+  if (bottomNav) bottomNav.style.display = ''; // Fallback to CSS display
+  if (authDialog && authDialog.open) authDialog.close();
   if (signedInPanel) signedInPanel.style.display = 'block';
   if (authStatusText) authStatusText.textContent = 'מחובר ✓';
 
@@ -95,51 +165,53 @@ export async function updateDisplayName(name) {
 export async function initAuth(onAuthChange) {
   console.log('[AUTH] initAuth called');
   
-  // Set up listener for future auth state changes
-  sb.auth.onAuthStateChange(async (event, session) => {
-    console.log('[AUTH] onAuthStateChange fired:', event, 'user:', session?.user?.email);
-    console.log('[AUTH] onAuthChange exists?', typeof onAuthChange, !!onAuthChange);
-    const user = session?.user ?? null;
+  // 1. Await explicit initial session check
+  const { data: { session }, error } = await sb.auth.getSession();
+  if (error) {
+    console.error('[AUTH] Error fetching initial session:', error);
+  }
+  
+  const initialUser = session?.user ?? null;
+  console.log('[AUTH] Initial session user:', initialUser?.email || 'NO USER');
+  
+  try {
+    await updateAuthUI(initialUser);
+  } catch (err) {
+    console.error('[AUTH] ERROR in initial updateAuthUI:', err);
+  }
+  
+  if (onAuthChange) {
+    try {
+      await onAuthChange(initialUser);
+    } catch (err) {
+      console.error('[AUTH] ERROR in initial onAuthChange callback:', err);
+    }
+  }
+
+  // 2. Set up listener for subsequent changes
+  sb.auth.onAuthStateChange(async (event, currentSession) => {
+    // Skip INITIAL_SESSION since we handled it above
+    if (event === 'INITIAL_SESSION') return;
+
+    console.log('[AUTH] onAuthStateChange fired:', event, 'user:', currentSession?.user?.email);
+    const user = currentSession?.user ?? null;
     
     try {
-      console.log('[AUTH] About to call updateAuthUI...');
       await updateAuthUI(user);
-      console.log('[AUTH] updateAuthUI completed');
     } catch (error) {
       console.error('[AUTH] ERROR in updateAuthUI:', error);
     }
     
-    console.log('[AUTH] Checking if onAuthChange exists:', !!onAuthChange);
     if (onAuthChange) {
       try {
-        console.log('[AUTH] Calling onAuthChange callback with user:', user?.email);
         await onAuthChange(user);
-        console.log('[AUTH] onAuthChange callback completed');
       } catch (error) {
         console.error('[AUTH] ERROR in onAuthChange callback:', error);
       }
-    } else {
-      console.error('[AUTH] ERROR: onAuthChange callback is missing!');
     }
     
     if (!user) {
       sb.removeAllChannels();
     }
   });
-  
-  // CRITICAL FIX: Check for existing session on initialization
-  console.log('[AUTH] Checking for existing session...');
-  const { data: { session } } = await sb.auth.getSession();
-  console.log('[AUTH] getSession result:', session?.user?.email || 'NO USER');
-  
-  if (session?.user) {
-    console.log('[AUTH] Found existing session, calling updateAuthUI and callback');
-    await updateAuthUI(session.user);
-    if (onAuthChange) {
-      console.log('[AUTH] Calling onAuthChange callback with existing user');
-      await onAuthChange(session.user);
-    }
-  } else {
-    console.log('[AUTH] No existing session found');
-  }
 }

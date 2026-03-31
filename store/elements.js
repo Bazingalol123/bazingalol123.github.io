@@ -63,6 +63,8 @@ export function initElements() {
     homeAddListBtn: document.getElementById('homeAddListBtn'),
     searchProductBtn: document.getElementById('searchProductBtn'),
     currentListName: document.getElementById('currentListName'),
+    landingSignUpBtn: document.getElementById('landingSignUpBtn'),
+    landingSignInBtn: document.getElementById('landingSignInBtn'),
     // Prompt dialog elements
     promptDialog: document.getElementById('promptDialog'),
     promptDialogTitle: document.getElementById('promptDialogTitle'),

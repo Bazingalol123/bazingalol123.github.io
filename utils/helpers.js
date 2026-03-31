@@ -49,17 +49,25 @@ export function hideLoading() {
   if (overlay) overlay.hidden = true;
 }
 
+let messageTimeout;
+
 /**
- * Show status message
+ * Show status message (Toast)
  * @param {string} message - Message to display
  * @param {boolean} isError - Whether this is an error message
+ * @param {number} durationMs - Duration to show in milliseconds
  */
-export function showMessage(message, isError = false) {
+export function showMessage(message, isError = false, durationMs = 3500) {
   const statusMessage = document.getElementById('statusMessage');
   if (!statusMessage) return;
   statusMessage.textContent = message;
   statusMessage.classList.remove('hidden', 'error');
   if (isError) statusMessage.classList.add('error');
+  
+  clearTimeout(messageTimeout);
+  messageTimeout = setTimeout(() => {
+    hideMessage();
+  }, durationMs);
 }
 
 /**
@@ -134,5 +142,34 @@ export function debounce(func, wait) {
     };
     clearTimeout(timeout);
     timeout = setTimeout(later, wait);
+  };
+}
+
+/**
+ * Validate email format
+ * @param {string} email - Email to validate
+ * @returns {boolean}
+ */
+export function isValidEmail(email) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+/**
+ * Validate password meets minimum requirements
+ * @param {string} password - Password to validate
+ * @returns {Object} { valid: boolean, message: string }
+ */
+export function validatePassword(password) {
+  if (!password || password.length < 6) {
+    return {
+      valid: false,
+      message: 'הסיסמה חייבת להכיל לפחות 6 תווים'
+    };
+  }
+  
+  return {
+    valid: true,
+    message: 'סיסמה תקינה'
   };
 }

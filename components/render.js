@@ -71,7 +71,20 @@ function getVisibleItems() {
   return sortItems(state.items).filter(item => {
     const matchesSearch = !search || [item.name, item.quantity, item.category, item.notes].join(' ').toLowerCase().includes(search);
     const matchesStatus = state.filters.status === 'all' || (state.filters.status === 'done' && item.purchased) || (state.filters.status === 'active' && !item.purchased);
-    return matchesSearch && matchesStatus;
+    
+    // Responsibility filter logic (section 7.2 of UX design)
+    const matchesResponsibility = (() => {
+      switch (state.filters.responsibility) {
+        case 'all': return true;
+        case 'unassigned': return !item.responsibleGroup;
+        case 'assigned': return !!item.responsibleGroup;
+        default:
+          // Specific group ID selected
+          return item.responsibleGroup?.id === state.filters.responsibility;
+      }
+    })();
+    
+    return matchesSearch && matchesStatus && matchesResponsibility;
   });
 }
 
@@ -193,9 +206,18 @@ export function renderItems(onToggle, onEdit, onDelete, onQuantityUpdate) {
       });
     }
 
-    // Swipe Actions
+    // Swipe Actions & Click Handler
     const itemFront = node.querySelector('.item-front');
     if (itemFront) {
+      // BUG FIX: Make entire card clickable to open edit dialog
+      itemFront.style.cursor = 'pointer';
+      itemFront.addEventListener('click', (e) => {
+        // Don't trigger if clicking buttons or interactive elements
+        if (!e.target.closest('button, input, .check-wrap, .item-stepper')) {
+          onEdit(item);
+        }
+      });
+      
       let startX = 0;
       let currentX = 0;
       itemFront.addEventListener('touchstart', (e) => {
@@ -255,40 +277,58 @@ export function renderItems(onToggle, onEdit, onDelete, onQuantityUpdate) {
  * @param {Function} onActions - List actions callback
  */
 export function renderLists(onSwitch, onActions) {
-  if (els.homeListsContainer) {
-    els.homeListsContainer.innerHTML = '';
-    state.lists.forEach(list => {
-      const isActive = list.id == state.currentListId;
-      const card = document.createElement('div');
-      card.className = `home-list-card${isActive ? ' active-list' : ''}`;
-      card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-          <h4 style="margin:0; padding-top:4px;">${escapeHtml(list.name)}</h4>
-          <button class="list-more-btn" data-list-id="${list.id}" data-list-name="${escapeHtml(list.name)}">⋮</button>
-        </div>
-        <div class="list-meta">
-          <span>${list.itemCount || 0} פריטים</span>
-          ${isActive ? '<span style="color:var(--primary); font-size:12px; font-weight: 700;">★ נבחר</span>' : ''}
-        </div>
-      `;
-      // Handle click on the card itself to switch list
-      card.addEventListener('click', (e) => {
-        if (!e.target.closest('.list-more-btn')) {
-          onSwitch(list.id);
-        }
-      });
-      
-      // Handle click on more button
-      const moreBtn = card.querySelector('.list-more-btn');
-      if (moreBtn && onActions) {
-        moreBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          onActions(list.id, list.name);
+  const onboardingView = document.getElementById('onboardingView');
+  const homeListsView = document.getElementById('homeListsView');
+
+  if (state.lists.length === 0) {
+    if (onboardingView) onboardingView.style.display = 'block';
+    if (homeListsView) homeListsView.style.display = 'none';
+    
+    // Set greeting
+    const greetingEl = document.getElementById('onboardingGreeting');
+    if (greetingEl) {
+      const displayName = document.getElementById('userDisplayName')?.textContent || 'חבר/ה';
+      greetingEl.textContent = `שלום, ${displayName.split('@')[0]}!`;
+    }
+  } else {
+    if (onboardingView) onboardingView.style.display = 'none';
+    if (homeListsView) homeListsView.style.display = 'block';
+
+    if (els.homeListsContainer) {
+      els.homeListsContainer.innerHTML = '';
+      state.lists.forEach(list => {
+        const isActive = list.id == state.currentListId;
+        const card = document.createElement('div');
+        card.className = `home-list-card${isActive ? ' active-list' : ''}`;
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <h4 style="margin:0; padding-top:4px;">${escapeHtml(list.name)}</h4>
+            <button class="list-more-btn" data-list-id="${list.id}" data-list-name="${escapeHtml(list.name)}">⋮</button>
+          </div>
+          <div class="list-meta">
+            <span>${list.itemCount || 0} פריטים</span>
+            ${isActive ? '<span style="color:var(--primary); font-size:12px; font-weight: 700;">★ נבחר</span>' : ''}
+          </div>
+        `;
+        // Handle click on the card itself to switch list
+        card.addEventListener('click', (e) => {
+          if (!e.target.closest('.list-more-btn')) {
+            onSwitch(list.id);
+          }
         });
-      }
-      
-      els.homeListsContainer.appendChild(card);
-    });
+        
+        // Handle click on more button
+        const moreBtn = card.querySelector('.list-more-btn');
+        if (moreBtn && onActions) {
+          moreBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onActions(list.id, list.name);
+          });
+        }
+        
+        els.homeListsContainer.appendChild(card);
+      });
+    }
   }
 
   const currentList = state.lists.find(l => l.id == state.currentListId);
