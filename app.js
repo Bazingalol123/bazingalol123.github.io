@@ -1341,85 +1341,134 @@ async function handleEmailVerification() {
 }
 
 async function boot() {
-  initElements();
-  hydrateDarkMode();
-  hydrateFromCache();
-  bindEvents();
-  initFilterToggle();
+  console.log('[BOOT] Starting boot sequence...');
   
-  // Initialize desktop mode and PWA detection
-  initDesktopMode();
-  initPWADetection();
-  
-  // IMPORTANT: Check for email verification BEFORE initializing auth
-  // This prevents the normal auth flow from interfering
-  const isVerificationFlow = await handleEmailVerification();
-  
-  if (isVerificationFlow) {
-    // Verification page is shown, don't proceed with normal app init yet
-    // The verification page will call transitionToApp() when ready
-    console.log('[BOOT] Verification flow handled, waiting for user action...');
-    return;
-  }
-  
-  // Normal app initialization
-  switchTab('home');
-  
-  await initAuth(async (user) => {
-    console.log('[BOOT] Auth callback fired with user:', user?.email || 'NO USER');
-    if (user) {
-      console.log('[BOOT] User authenticated, loading lists...');
-      await loadLists();
-      console.log('[BOOT] Lists loaded, state.lists:', state.lists.length);
-      renderLists(handleSwitchList, handleOpenListActions);
-      if (state.currentListId) {
-        console.log('[BOOT] Current list ID exists:', state.currentListId);
-        await loadItems();
-        reRenderAll();
-        subscribeToList(state.currentListId, (payload) => {
-          handleRealtimeItemChange(payload);
-          reRenderAll();
-          setSyncChip('מסונכרן', 'connected');
-        }, setSyncChip);
-        state.responsibilityGroups = await loadResponsibilityGroups();
-        cachedGroups = state.responsibilityGroups;
-        renderResponsibilityOptions(cachedGroups);
-        renderResponsibilityFilter(cachedGroups);
-        
-        switchTab('list');
-      } else {
-        console.log('[BOOT] No current list ID');
-      }
-      
-      // Check for password recovery callback (uses hash params, not query params)
-      const hashParams = getHashParams();
-      if (hashParams.type === 'recovery') {
-        // Password reset callback - auto-open the password reset dialog
-        window.history.replaceState({}, document.title, window.location.pathname);
-        document.getElementById('updatePasswordDialog')?.showModal();
-      }
-      
-      const inviteListId = await checkInviteToken();
-      if (inviteListId) await handleSwitchList(inviteListId);
-    } else {
-      console.log('[BOOT] No user in auth callback');
+  try {
+    initElements();
+    console.log('[BOOT] Elements initialized');
+    
+    hydrateDarkMode();
+    hydrateFromCache();
+    bindEvents();
+    initFilterToggle();
+    console.log('[BOOT] Basic setup complete');
+    
+    // Initialize desktop mode and PWA detection
+    initDesktopMode();
+    initPWADetection();
+    console.log('[BOOT] Desktop mode and PWA detection initialized');
+    
+    // IMPORTANT: Check for email verification BEFORE initializing auth
+    // This prevents the normal auth flow from interfering
+    const isVerificationFlow = await handleEmailVerification();
+    
+    if (isVerificationFlow) {
+      // Verification page is shown, don't proceed with normal app init yet
+      // The verification page will call transitionToApp() when ready
+      console.log('[BOOT] Verification flow handled, waiting for user action...');
+      return;
     }
-  });
-  
-  renderQuickAddCarousel(handleQuickAddItem);
+    
+    // Normal app initialization
+    switchTab('home');
+    console.log('[BOOT] Initializing auth...');
+    
+    await initAuth(async (user) => {
+      console.log('[BOOT] Auth callback fired with user:', user?.email || 'NO USER');
+      if (user) {
+        console.log('[BOOT] User authenticated, loading lists...');
+        try {
+          await loadLists();
+          console.log('[BOOT] Lists loaded, state.lists:', state.lists.length);
+          renderLists(handleSwitchList, handleOpenListActions);
+          
+          if (state.currentListId) {
+            console.log('[BOOT] Current list ID exists:', state.currentListId);
+            await loadItems();
+            reRenderAll();
+            subscribeToList(state.currentListId, (payload) => {
+              handleRealtimeItemChange(payload);
+              reRenderAll();
+              setSyncChip('מסונכרן', 'connected');
+            }, setSyncChip);
+            state.responsibilityGroups = await loadResponsibilityGroups();
+            cachedGroups = state.responsibilityGroups;
+            renderResponsibilityOptions(cachedGroups);
+            renderResponsibilityFilter(cachedGroups);
+            
+            switchTab('list');
+          } else {
+            console.log('[BOOT] No current list ID');
+          }
+          
+          // Check for password recovery callback (uses hash params, not query params)
+          const hashParams = getHashParams();
+          if (hashParams.type === 'recovery') {
+            // Password reset callback - auto-open the password reset dialog
+            window.history.replaceState({}, document.title, window.location.pathname);
+            document.getElementById('updatePasswordDialog')?.showModal();
+          }
+          
+          const inviteListId = await checkInviteToken();
+          if (inviteListId) await handleSwitchList(inviteListId);
+        } catch (error) {
+          console.error('[BOOT] Error in authenticated user initialization:', error);
+          showMessage('שגיאה בטעינת הנתונים. אנא רענן את הדף.', true);
+        }
+      } else {
+        console.log('[BOOT] No user in auth callback');
+      }
+    });
+    
+    renderQuickAddCarousel(handleQuickAddItem);
+    console.log('[BOOT] Boot sequence complete');
+  } catch (error) {
+    console.error('[BOOT] CRITICAL ERROR during boot:', error);
+    // Show error to user instead of blank screen
+    const body = document.body;
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fee; color: #c00; padding: 24px; border-radius: 8px; max-width: 90%; text-align: center; z-index: 10000; font-family: system-ui, -apple-system, sans-serif;';
+    errorDiv.innerHTML = `
+      <h2 style="margin: 0 0 16px 0;">❌ שגיאה בטעינה</h2>
+      <p style="margin: 0 0 16px 0;">${error.message || 'שגיאה לא צפויה'}</p>
+      <button onclick="window.location.reload()" style="padding: 12px 24px; background: #c00; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;">
+        רענן את הדף
+      </button>
+    `;
+    body.appendChild(errorDiv);
+  }
 }
 
-// Service Worker
+// Service Worker - Made graceful for iOS Safari
 if ('serviceWorker' in navigator) {
+  console.log('[SW] Service Worker API available');
+  
+  // FIX: Unregister old service workers gracefully
   navigator.serviceWorker.getRegistrations().then(registrations => {
-    registrations.forEach(registration => registration.unregister());
+    console.log('[SW] Found', registrations.length, 'existing registrations');
+    registrations.forEach(registration => {
+      console.log('[SW] Unregistering old service worker');
+      registration.unregister();
+    });
+  }).catch(error => {
+    console.warn('[SW] Error unregistering old service workers (non-critical):', error);
   });
   
+  // FIX: Register service worker without blocking app initialization
   window.addEventListener('load', () => {
+    console.log('[SW] Attempting to register service worker...');
     navigator.serviceWorker.register('./sw.js?v=12')
-      .then(registration => console.log('Service Worker registered:', registration.scope))
-      .catch(error => console.log('Service Worker registration failed:', error));
+      .then(registration => {
+        console.log('[SW] Service Worker registered successfully:', registration.scope);
+      })
+      .catch(error => {
+        // FIX: Service worker registration failure should not break the app
+        console.warn('[SW] Service Worker registration failed (non-critical):', error);
+        console.warn('[SW] App will work without offline support');
+      });
   });
+} else {
+  console.warn('[SW] Service Worker API not available (likely iOS Safari in non-PWA mode)');
 }
 
 if (document.readyState === 'loading') {

@@ -165,53 +165,80 @@ export async function updateDisplayName(name) {
 export async function initAuth(onAuthChange) {
   console.log('[AUTH] initAuth called');
   
-  // 1. Await explicit initial session check
-  const { data: { session }, error } = await sb.auth.getSession();
-  if (error) {
-    console.error('[AUTH] Error fetching initial session:', error);
-  }
-  
-  const initialUser = session?.user ?? null;
-  console.log('[AUTH] Initial session user:', initialUser?.email || 'NO USER');
-  
   try {
-    await updateAuthUI(initialUser);
-  } catch (err) {
-    console.error('[AUTH] ERROR in initial updateAuthUI:', err);
-  }
-  
-  if (onAuthChange) {
-    try {
-      await onAuthChange(initialUser);
-    } catch (err) {
-      console.error('[AUTH] ERROR in initial onAuthChange callback:', err);
-    }
-  }
-
-  // 2. Set up listener for subsequent changes
-  sb.auth.onAuthStateChange(async (event, currentSession) => {
-    // Skip INITIAL_SESSION since we handled it above
-    if (event === 'INITIAL_SESSION') return;
-
-    console.log('[AUTH] onAuthStateChange fired:', event, 'user:', currentSession?.user?.email);
-    const user = currentSession?.user ?? null;
+    // 1. Await explicit initial session check with timeout
+    console.log('[AUTH] Fetching initial session...');
+    
+    const sessionPromise = sb.auth.getSession();
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Session fetch timeout')), 10000)
+    );
+    
+    let session = null;
+    let error = null;
     
     try {
-      await updateAuthUI(user);
-    } catch (error) {
-      console.error('[AUTH] ERROR in updateAuthUI:', error);
+      const result = await Promise.race([sessionPromise, timeoutPromise]);
+      session = result.data?.session ?? null;
+      error = result.error;
+    } catch (err) {
+      console.warn('[AUTH] Session fetch timed out or failed:', err.message);
+      error = err;
+    }
+    
+    if (error) {
+      console.error('[AUTH] Error fetching initial session:', error);
+    }
+    
+    const initialUser = session?.user ?? null;
+    console.log('[AUTH] Initial session user:', initialUser?.email || 'NO USER');
+    
+    try {
+      await updateAuthUI(initialUser);
+    } catch (err) {
+      console.error('[AUTH] ERROR in initial updateAuthUI:', err);
+      // Continue even if updateAuthUI fails
     }
     
     if (onAuthChange) {
       try {
-        await onAuthChange(user);
-      } catch (error) {
-        console.error('[AUTH] ERROR in onAuthChange callback:', error);
+        await onAuthChange(initialUser);
+      } catch (err) {
+        console.error('[AUTH] ERROR in initial onAuthChange callback:', err);
+        // Continue even if callback fails
       }
     }
+
+    // 2. Set up listener for subsequent changes
+    sb.auth.onAuthStateChange(async (event, currentSession) => {
+      // Skip INITIAL_SESSION since we handled it above
+      if (event === 'INITIAL_SESSION') return;
+
+      console.log('[AUTH] onAuthStateChange fired:', event, 'user:', currentSession?.user?.email);
+      const user = currentSession?.user ?? null;
+      
+      try {
+        await updateAuthUI(user);
+      } catch (error) {
+        console.error('[AUTH] ERROR in updateAuthUI:', error);
+      }
+      
+      if (onAuthChange) {
+        try {
+          await onAuthChange(user);
+        } catch (error) {
+          console.error('[AUTH] ERROR in onAuthChange callback:', error);
+        }
+      }
+      
+      if (!user) {
+        sb.removeAllChannels();
+      }
+    });
     
-    if (!user) {
-      sb.removeAllChannels();
-    }
-  });
+    console.log('[AUTH] initAuth completed successfully');
+  } catch (error) {
+    console.error('[AUTH] CRITICAL ERROR in initAuth:', error);
+    throw error; // Re-throw to be caught by boot()
+  }
 }

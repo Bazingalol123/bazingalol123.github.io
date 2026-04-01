@@ -886,7 +886,21 @@
   <div id="statusMessage" class="status-message hidden" aria-live="polite" role="status"></div>
 
   <!-- MIGRATION: Supabase client library replacing Apps Script backend -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- FIX: Ensure Supabase loads before modules on iOS Safari -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"
+          onerror="console.error('Failed to load Supabase SDK from CDN'); alert('שגיאה בטעינת המערכת. אנא בדוק את החיבור לאינטרנט ורענן את הדף.');">
+  </script>
+  
+  <!-- FIX: Verify Supabase loaded before continuing -->
+  <script>
+    if (typeof window.supabase === 'undefined') {
+      console.error('[CRITICAL] Supabase SDK failed to load!');
+      alert('שגיאה קריטית: לא הצלחנו לטעון את ספריית Supabase. אנא רענן את הדף.');
+    } else {
+      console.log('[INDEX] Supabase SDK loaded successfully');
+    }
+  </script>
+  
   <script src="https://unpkg.com/html5-qrcode" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
