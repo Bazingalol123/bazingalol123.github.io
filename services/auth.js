@@ -46,7 +46,7 @@ export async function signIn(email, password) {
  */
 export async function resetPassword(email) {
   const { error } = await sb.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.href
+    redirectTo: window.location.origin + '/'
   });
   if (error) throw error;
 }

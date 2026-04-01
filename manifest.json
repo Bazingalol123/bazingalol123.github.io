@@ -2,8 +2,8 @@
   "name": "רשימת קניות משותפת",
   "short_name": "רשימת קניות",
   "description": "רשימת קניות משותפת עם סנכרון בזמן אמת",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#fafbfc",
   "theme_color": "#2563eb",
@@ -11,6 +11,11 @@
   "categories": ["shopping", "productivity"],
   "lang": "he",
   "dir": "rtl",
+  "url_handlers": [
+    {
+      "origin": "https://bazingalol123.github.io"
+    }
+  ],
   "icons": [
     {
       "src": "icon-192.png",

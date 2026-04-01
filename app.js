@@ -1098,6 +1098,26 @@ async function boot() {
       } else {
         console.log('[BOOT] No current list ID');
       }
+      
+      // Check for auth callback types (email verification, password reset)
+      const urlParams = new URLSearchParams(window.location.search);
+      const authType = urlParams.get('type');
+
+      if (authType === 'recovery') {
+        // Password reset callback - auto-open the password reset dialog
+        // Clean URL first
+        window.history.replaceState({}, document.title, window.location.pathname);
+        // Show password reset dialog
+        const passwordResetDialog = els.passwordResetDialog;
+        passwordResetDialog.showModal();
+      } else if (authType === 'signup' || authType === 'invite') {
+        // Email confirmation success - show feedback to user
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        // Show success message (you can enhance this with a proper toast/notification)
+        alert('Email verified successfully! Welcome to the app.');
+      }
+      
       const inviteListId = await checkInviteToken();
       if (inviteListId) await handleSwitchList(inviteListId);
     } else {
