@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shopping-list-v11';
+const CACHE_NAME = 'shopping-list-v12';
 // OPTIMIZATION: Cache External CDN Scripts to ensure barcode scanner works offline
 const urlsToCache = [
   './',

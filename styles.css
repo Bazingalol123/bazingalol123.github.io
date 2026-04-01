@@ -1417,3 +1417,405 @@ dialog p.muted { margin: 0 0 12px; color: var(--text-muted); font-size: 0.8rem; 
   border-color: var(--text);
   box-shadow: var(--shadow);
 }
+
+/* ========================================
+   Email Verification Confirmation Page
+   ======================================== */
+
+.verification-page {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+  text-align: center;
+  overflow-y: auto;
+  position: relative;
+  z-index: 100;
+}
+
+.verification-content {
+  max-width: 520px;
+  width: 100%;
+  animation: verificationFadeIn 0.6s ease-out;
+}
+
+@keyframes verificationFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Success/Error Icon */
+.verification-icon-wrapper {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.verification-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  font-weight: 700;
+  animation: verificationIconPop 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.verification-icon.success {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 3px solid var(--success);
+}
+
+.verification-icon.error {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 3px solid var(--danger);
+}
+
+@keyframes verificationIconPop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Message Section */
+.verification-message {
+  margin-bottom: 32px;
+}
+
+.verification-title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0 0 16px 0;
+  line-height: 1.1;
+}
+
+.verification-subtitle {
+  font-size: 1.1rem;
+  color: var(--text);
+  margin: 0 0 12px 0;
+}
+
+.verification-subtitle strong {
+  color: var(--success);
+}
+
+#verificationErrorPage .verification-subtitle strong {
+  color: var(--danger);
+}
+
+.verification-detail {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Actions */
+.verification-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.verification-btn {
+  padding: 16px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: var(--radius-lg);
+  transition: var(--transition);
+}
+
+.verification-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 8px 0 0 0;
+}
+
+.verification-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 8px;
+  font-size: 0.9rem;
+  transition: var(--transition);
+  font-family: inherit;
+}
+
+.verification-link:hover {
+  color: var(--primary-hover);
+}
+
+/* Feature Items */
+.verification-features {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+}
+
+.verification-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.verification-feature-icon {
+  font-size: 1.2rem;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .verification-title {
+    font-size: 1.5rem;
+  }
+  
+  .verification-icon {
+    width: 64px;
+    height: 64px;
+    font-size: 2.5rem;
+  }
+  
+  .verification-features {
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   Desktop Mobile-Viewport Layout
+   ══════════════════════════════════════════════════════════ */
+
+body.desktop-mode {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-attachment: fixed;
+}
+
+body.desktop-mode::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.desktop-container {
+  display: none;
+}
+
+body.desktop-mode .desktop-container {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  z-index: 1;
+}
+
+.desktop-mobile-viewport {
+  width: 100%;
+  max-width: 414px;
+  height: 100%;
+  max-height: 896px;
+  background: var(--bg);
+  border-radius: 32px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+body.desktop-mode.dark-mode {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+@media (max-height: 900px) {
+  .desktop-mobile-viewport {
+    max-height: 90vh;
+  }
+}
+
+@media (max-width: 767px) {
+  body.desktop-mode {
+    background: var(--bg);
+  }
+  body.desktop-mode::before {
+    display: none;
+  }
+  body.desktop-mode .desktop-container {
+    display: contents;
+  }
+  .desktop-mobile-viewport {
+    border-radius: 0;
+    max-width: 100%;
+    max-height: 100%;
+    box-shadow: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   PWA Install Prompt
+   ══════════════════════════════════════════════════════════ */
+
+.pwa-install-prompt {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-top: 2px solid var(--primary);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  animation: slideUpPrompt 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@keyframes slideUpPrompt {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.pwa-install-content {
+  position: relative;
+  padding: 20px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.pwa-install-close {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: transparent;
+  border: none;
+  font-size: 2rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.pwa-install-close:hover {
+  background: var(--bg-2);
+  color: var(--text);
+}
+
+.pwa-install-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.pwa-install-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+}
+
+.pwa-install-header h3 {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.pwa-install-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.install-instructions {
+  background: var(--bg-2);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.install-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  text-align: right;
+}
+
+.step-number {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.step-text {
+  flex: 1;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text);
+  padding-top: 4px;
+}
+
+.step-text strong {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+body.desktop-mode .pwa-install-prompt,
+body.pwa-mode .pwa-install-prompt {
+  display: none !important;
+}

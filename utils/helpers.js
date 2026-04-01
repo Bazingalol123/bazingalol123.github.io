@@ -173,3 +173,83 @@ export function validatePassword(password) {
     message: 'סיסמה תקינה'
   };
 }
+
+// ══════════════════════════════════════════════════════════
+// PWA & Desktop Detection Utilities
+// ══════════════════════════════════════════════════════════
+
+/**
+ * PWA Detection - Check if app is running as installed PWA
+ * @returns {boolean}
+ */
+export function isPWA() {
+  if (window.matchMedia('(display-mode: standalone)').matches) return true;
+  if (window.navigator.standalone === true) return true;
+  if (document.referrer.includes('android-app://')) return true;
+  return false;
+}
+
+/**
+ * Mobile Device Detection
+ * @returns {boolean}
+ */
+export function isMobileDevice() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+/**
+ * Platform Detection - Returns specific platform for targeted install instructions
+ * @returns {string} 'ios-safari' | 'android-chrome' | 'ios-other' | 'android-other' | 'desktop'
+ */
+export function getPlatform() {
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  const isSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
+  const isChrome = /Chrome/.test(ua);
+  
+  if (isIOS && isSafari) return 'ios-safari';
+  if (isAndroid && isChrome) return 'android-chrome';
+  if (isIOS) return 'ios-other';
+  if (isAndroid) return 'android-other';
+  return 'desktop';
+}
+
+/**
+ * Check if should show install prompt
+ * Only show if: mobile device, not installed, and not dismissed recently
+ * @returns {boolean}
+ */
+export function shouldShowInstallPrompt() {
+  const dismissed = localStorage.getItem('pwa_install_dismissed');
+  const dismissedAt = parseInt(dismissed || '0');
+  const weekInMs = 7 * 24 * 60 * 60 * 1000;
+  return isMobileDevice() && !isPWA() && (Date.now() - dismissedAt > weekInMs);
+}
+
+/**
+ * Desktop Detection - Check if viewing from desktop
+ * @returns {boolean}
+ */
+export function isDesktop() {
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const isWideScreen = window.matchMedia('(min-width: 768px)').matches;
+  return isWideScreen && !hasTouch;
+}
+
+/**
+ * Initialize desktop mode - Add class to body and listen for resize
+ */
+export function initDesktopMode() {
+  if (isDesktop()) {
+    document.body.classList.add('desktop-mode');
+  }
+  
+  window.addEventListener('resize', () => {
+    if (isDesktop()) {
+      document.body.classList.add('desktop-mode');
+    } else {
+      document.body.classList.remove('desktop-mode');
+    }
+  });
+}

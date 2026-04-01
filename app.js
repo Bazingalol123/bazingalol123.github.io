@@ -2,15 +2,21 @@
 import { sb } from './api/supabase.js';
 import { state, LIST_CACHE_KEY } from './store/state.js';
 import { els, initElements } from './store/elements.js';
-import { 
-  formatDate, 
-  formatTimeOnly, 
-  escapeHtml, 
-  showLoading, 
-  hideLoading, 
-  showMessage, 
+import {
+  formatDate,
+  formatTimeOnly,
+  escapeHtml,
+  showLoading,
+  hideLoading,
+  showMessage,
   hideMessage,
-  normalizeItem 
+  normalizeItem,
+  isPWA,
+  isMobileDevice,
+  getPlatform,
+  shouldShowInstallPrompt,
+  initDesktopMode,
+  isDesktop
 } from './utils/helpers.js';
 import {
   currentUser,
@@ -82,6 +88,16 @@ let cachedListMembers = [];
 
 // List actions context
 let listActionsContext = { listId: null, listName: '' };
+
+// PWA Install Prompt
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const installBtn = document.getElementById('pwaInstallButton');
+  if (installBtn) installBtn.style.display = 'block';
+});
 
 // ─── GROCERY DICTIONARY FOR CATEGORY PREDICTION ────────────────────
 const GROCERY_DICTIONARY = {
@@ -175,6 +191,48 @@ function predictCategory(name) {
   }
   
   return '';
+}
+
+// ─── PWA FUNCTIONS ───────────────────────────────────────────────
+
+function initPWADetection() {
+  if (isPWA()) {
+    document.body.classList.add('pwa-mode');
+    return;
+  }
+  
+  if (shouldShowInstallPrompt()) {
+    showInstallPrompt();
+  }
+}
+
+function showInstallPrompt() {
+  const prompt = document.getElementById('pwaInstallPrompt');
+  if (!prompt) return;
+  
+  const platform = getPlatform();
+  
+  document.getElementById('installInstructionsIOS').style.display = 'none';
+  document.getElementById('installInstructionsAndroid').style.display = 'none';
+  document.getElementById('installInstructionsGeneric').style.display = 'none';
+  
+  if (platform === 'ios-safari') {
+    document.getElementById('installInstructionsIOS').style.display = 'block';
+  } else if (platform === 'android-chrome') {
+    document.getElementById('installInstructionsAndroid').style.display = 'block';
+  } else if (isMobileDevice()) {
+    document.getElementById('installInstructionsGeneric').style.display = 'block';
+  } else {
+    return;
+  }
+  
+  prompt.style.display = 'block';
+}
+
+function dismissInstallPrompt() {
+  const prompt = document.getElementById('pwaInstallPrompt');
+  if (prompt) prompt.style.display = 'none';
+  localStorage.setItem('pwa_install_dismissed', Date.now().toString());
 }
 
 // ─── HELPER FUNCTIONS ────────────────────────────────────────────
@@ -644,6 +702,43 @@ function bindEvents() {
     }
   });
 
+  // Email Verification - Return to App button
+  document.getElementById('returnToAppBtn')?.addEventListener('click', () => {
+    transitionToApp();
+  });
+
+  // Email Verification - Return to Login button (from error page)
+  document.getElementById('returnToLoginBtn')?.addEventListener('click', () => {
+    document.getElementById('verificationErrorPage')?.style.setProperty('display', 'none');
+    document.getElementById('landingPage')?.style.setProperty('display', 'flex');
+  });
+
+  // Email Verification - Resend verification email
+  document.getElementById('resendVerificationBtn')?.addEventListener('click', async () => {
+    // This would need the user to enter their email again
+    const email = await showPromptDialog('שלח אימות מחדש', 'הזן את כתובת האימייל שלך:', '');
+    if (!email) return;
+    
+    try {
+      showLoading();
+      // Resend verification by triggering resend
+      const { error } = await sb.auth.resend({
+        type: 'signup',
+        email: email
+      });
+      
+      if (error) throw error;
+      
+      showMessage('נשלח אימייל חדש! בדוק את תיבת הדואר שלך.', false, 5000);
+      document.getElementById('verificationErrorPage')?.style.setProperty('display', 'none');
+      document.getElementById('landingPage')?.style.setProperty('display', 'flex');
+    } catch (err) {
+      showMessage('שגיאה בשליחת האימייל: ' + err.message, true);
+    } finally {
+      hideLoading();
+    }
+  });
+
   // GROUPS: Manage responsibility groups
   document.getElementById('listActionManageGroups')?.addEventListener('click', async () => {
     els.listActionsDialog.close();
@@ -1036,6 +1131,23 @@ function bindEvents() {
     setQuickAddMode('common');
     renderQuickAddCarousel(handleQuickAddItem);
   });
+
+  // PWA Install Prompt events
+  document.getElementById('pwaInstallDismiss')?.addEventListener('click', dismissInstallPrompt);
+
+  document.getElementById('pwaInstallButton')?.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    
+    if (outcome === 'accepted') {
+      showMessage('האפליקציה מותקנת...');
+    }
+    
+    deferredInstallPrompt = null;
+    dismissInstallPrompt();
+  });
 }
 
 // ─── CACHE & INITIALIZATION ──────────────────────────────────────
@@ -1065,12 +1177,192 @@ function hydrateDarkMode() {
   }
 }
 
+// ── EMAIL VERIFICATION HANDLING ──────────────────────────────────
+
+/**
+ * Parse URL hash parameters from Supabase auth callback
+ * @returns {Object} Hash parameters
+ */
+function getHashParams() {
+  const hash = window.location.hash.substring(1); // Remove #
+  if (!hash) return {};
+  
+  const params = new URLSearchParams(hash);
+  return {
+    type: params.get('type'),
+    access_token: params.get('access_token'),
+    error: params.get('error'),
+    error_description: params.get('error_description')
+  };
+}
+
+/**
+ * Show email verification success page
+ * @param {Object} user - Supabase user object
+ */
+function showVerificationSuccess(user) {
+  console.log('[Verification] Showing success page for user:', user.email);
+  
+  // Hide other pages
+  document.getElementById('landingPage')?.style.setProperty('display', 'none');
+  document.getElementById('appLayout')?.style.setProperty('display', 'none');
+  document.getElementById('verificationErrorPage')?.style.setProperty('display', 'none');
+  
+  // Show verification success page
+  const verificationPage = document.getElementById('verificationSuccessPage');
+  if (verificationPage) {
+    verificationPage.style.display = 'flex';
+    
+    // Set personalized username
+    const displayName = user.user_metadata?.display_name || user.email.split('@')[0];
+    const userNameEl = document.getElementById('verifiedUserName');
+    if (userNameEl) {
+      userNameEl.textContent = displayName;
+    }
+    
+    // Clean URL (remove hash) for better UX
+    window.history.replaceState({}, document.title, window.location.pathname);
+    
+    // Auto-redirect to app after 3 seconds
+    setTimeout(() => {
+      transitionToApp();
+    }, 3000);
+  }
+}
+
+/**
+ * Show email verification error page
+ * @param {string} errorMessage - Error description
+ */
+function showVerificationError(errorMessage) {
+  console.log('[Verification] Showing error page:', errorMessage);
+  
+  // Hide other pages
+  document.getElementById('landingPage')?.style.setProperty('display', 'none');
+  document.getElementById('appLayout')?.style.setProperty('display', 'none');
+  document.getElementById('verificationSuccessPage')?.style.setProperty('display', 'none');
+  
+  // Show error page
+  const errorPage = document.getElementById('verificationErrorPage');
+  if (errorPage) {
+    errorPage.style.display = 'flex';
+    
+    // Set error message
+    const errorDetail = document.getElementById('verificationErrorDetail');
+    if (errorDetail && errorMessage) {
+      errorDetail.textContent = errorMessage;
+    }
+    
+    // Clean URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
+
+/**
+ * Transition from verification page to main app
+ */
+function transitionToApp() {
+  console.log('[Verification] Transitioning to app...');
+  
+  const verificationPage = document.getElementById('verificationSuccessPage');
+  const appLayout = document.getElementById('appLayout');
+  
+  if (verificationPage) {
+    verificationPage.style.display = 'none';
+  }
+  
+  if (appLayout) {
+    appLayout.style.display = '';
+    
+    // Switch to home tab to show lists
+    switchTab('home');
+    
+    // Show welcome message
+    showMessage('ברוכים הבאים! ניתן להתחיל להשתמש ברשימת הקניות.', false, 4000);
+  }
+}
+
+/**
+ * Handle email verification flow
+ * Called early in boot process
+ */
+async function handleEmailVerification() {
+  const hashParams = getHashParams();
+  
+  // Check if this is an email verification callback
+  if (hashParams.type !== 'signup') {
+    return false; // Not a verification flow
+  }
+  
+  console.log('[Verification] Email verification detected');
+  
+  // Check for errors in URL
+  if (hashParams.error) {
+    const errorMsg = hashParams.error_description || 'הקישור אינו תקף או שפג תוקפו.';
+    showVerificationError(errorMsg);
+    return true; // Handled
+  }
+  
+  // Wait for Supabase to process the tokens and authenticate
+  // The SDK will automatically exchange the tokens
+  // We need to wait for the auth state change
+  
+  return new Promise((resolve) => {
+    let resolved = false;
+    
+    // Timeout after 5 seconds if auth doesn't complete
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        console.log('[Verification] Timeout waiting for auth');
+        showVerificationError('תקלה באימות. נסה להיכנס שוב.');
+        resolve(true);
+      }
+    }, 5000);
+    
+    // Listen for auth state change
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
+      console.log('[Verification] Auth state changed:', event);
+      
+      if (!resolved && event === 'SIGNED_IN' && session?.user) {
+        resolved = true;
+        clearTimeout(timeout);
+        
+        // User successfully authenticated
+        showVerificationSuccess(session.user);
+        
+        // Unsubscribe from this specific listener
+        subscription.unsubscribe();
+        
+        resolve(true);
+      }
+    });
+  });
+}
+
 async function boot() {
   initElements();
   hydrateDarkMode();
   hydrateFromCache();
   bindEvents();
   initFilterToggle();
+  
+  // Initialize desktop mode and PWA detection
+  initDesktopMode();
+  initPWADetection();
+  
+  // IMPORTANT: Check for email verification BEFORE initializing auth
+  // This prevents the normal auth flow from interfering
+  const isVerificationFlow = await handleEmailVerification();
+  
+  if (isVerificationFlow) {
+    // Verification page is shown, don't proceed with normal app init yet
+    // The verification page will call transitionToApp() when ready
+    console.log('[BOOT] Verification flow handled, waiting for user action...');
+    return;
+  }
+  
+  // Normal app initialization
   switchTab('home');
   
   await initAuth(async (user) => {
@@ -1099,23 +1391,12 @@ async function boot() {
         console.log('[BOOT] No current list ID');
       }
       
-      // Check for auth callback types (email verification, password reset)
-      const urlParams = new URLSearchParams(window.location.search);
-      const authType = urlParams.get('type');
-
-      if (authType === 'recovery') {
+      // Check for password recovery callback (uses hash params, not query params)
+      const hashParams = getHashParams();
+      if (hashParams.type === 'recovery') {
         // Password reset callback - auto-open the password reset dialog
-        // Clean URL first
         window.history.replaceState({}, document.title, window.location.pathname);
-        // Show password reset dialog
-        const passwordResetDialog = els.passwordResetDialog;
-        passwordResetDialog.showModal();
-      } else if (authType === 'signup' || authType === 'invite') {
-        // Email confirmation success - show feedback to user
-        // Clean URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-        // Show success message (you can enhance this with a proper toast/notification)
-        alert('Email verified successfully! Welcome to the app.');
+        document.getElementById('updatePasswordDialog')?.showModal();
       }
       
       const inviteListId = await checkInviteToken();
@@ -1135,7 +1416,7 @@ if ('serviceWorker' in navigator) {
   });
   
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=11')
+    navigator.serviceWorker.register('./sw.js?v=12')
       .then(registration => console.log('Service Worker registered:', registration.scope))
       .catch(error => console.log('Service Worker registration failed:', error));
   });

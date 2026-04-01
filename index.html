@@ -26,6 +26,69 @@
   <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
 </head>
 <body>
+  <!-- Desktop Mode Container -->
+  <div class="desktop-container">
+    <div class="desktop-mobile-viewport">
+      
+  <!-- PWA Install Prompt (Mobile Browser Only) -->
+  <div id="pwaInstallPrompt" class="pwa-install-prompt" style="display: none;">
+    <div class="pwa-install-content">
+      <button id="pwaInstallDismiss" class="pwa-install-close" aria-label="סגירה">×</button>
+      
+      <div class="pwa-install-header">
+        <div class="pwa-install-icon">📱</div>
+        <h3>התקן את האפליקציה</h3>
+        <p class="pwa-install-subtitle">גישה מהירה ללא דפדפן + עבודה ללא אינטרנט</p>
+      </div>
+      
+      <!-- iOS Safari Instructions -->
+      <div id="installInstructionsIOS" class="install-instructions" style="display: none;">
+        <div class="install-steps">
+          <div class="install-step">
+            <span class="step-number">1</span>
+            <span class="step-text">לחץ על כפתור השיתוף <strong>⬆️</strong> בתחתית המסך</span>
+          </div>
+          <div class="install-step">
+            <span class="step-number">2</span>
+            <span class="step-text">גלול למטה ובחר <strong>"הוסף למסך הבית"</strong></span>
+          </div>
+          <div class="install-step">
+            <span class="step-number">3</span>
+            <span class="step-text">לחץ <strong>"הוסף"</strong> בפינה הימנית העליונה</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Android Chrome Instructions -->
+      <div id="installInstructionsAndroid" class="install-instructions" style="display: none;">
+        <div class="install-steps">
+          <div class="install-step">
+            <span class="step-number">1</span>
+            <span class="step-text">לחץ על התפריט <strong>⋮</strong> בפינה השמאלית העליונה</span>
+          </div>
+          <div class="install-step">
+            <span class="step-number">2</span>
+            <span class="step-text">בחר <strong>"התקן אפליקציה"</strong> או <strong>"הוסף למסך הבית"</strong></span>
+          </div>
+          <div class="install-step">
+            <span class="step-number">3</span>
+            <span class="step-text">לחץ <strong>"התקן"</strong> בחלון הקופץ</span>
+          </div>
+        </div>
+        <button id="pwaInstallButton" class="btn-primary" style="margin-top: 16px; width: 100%; display: none;">
+          התקן עכשיו
+        </button>
+      </div>
+      
+      <!-- Generic Instructions -->
+      <div id="installInstructionsGeneric" class="install-instructions" style="display: none;">
+        <p style="text-align: center; color: var(--text-muted);">
+          חפש אפשרות "התקן אפליקציה" או "הוסף למסך הבית" בתפריט הדפדפן שלך.
+        </p>
+      </div>
+    </div>
+  </div>
+
   <!-- Landing Page (Logged Out Flow) -->
   <div id="landingPage" class="landing-page" style="display: none;">
     <div class="landing-content">
@@ -56,6 +119,82 @@
       <div class="landing-actions">
         <button id="landingSignUpBtn" class="btn-primary" style="margin-bottom: 12px;">הרשמה והתחלת שימוש</button>
         <button id="landingSignInBtn" class="btn-secondary">כבר יש לכם חשבון? כניסה</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email Verification Success Page -->
+  <div id="verificationSuccessPage" class="verification-page" style="display: none;">
+    <div class="verification-content">
+      <!-- Success Animation/Icon -->
+      <div class="verification-icon-wrapper">
+        <div class="verification-icon success">✓</div>
+      </div>
+      
+      <!-- Personalized Message -->
+      <div class="verification-message">
+        <h1 class="verification-title">שלום <span id="verifiedUserName"></span>!</h1>
+        <p class="verification-subtitle">
+          <strong>האימייל אומת בהצלחה! 🎉</strong>
+        </p>
+        <p class="verification-detail">
+          כעת תוכל לחזור לאפליקציה ולהתחיל להשתמש ברשימת הקניות המשותפת.
+        </p>
+      </div>
+
+      <!-- Next Steps -->
+      <div class="verification-actions">
+        <button id="returnToAppBtn" class="btn-primary verification-btn">
+          <span style="margin-inline-end: 8px;">🛒</span>
+          חזרה לאפליקציה
+        </button>
+        <p class="verification-hint">
+          מעביר אוטומטית עוד 3 שניות...
+        </p>
+      </div>
+
+      <!-- App Features Reminder -->
+      <div class="verification-features">
+        <div class="verification-feature-item">
+          <span class="verification-feature-icon">⚡️</span>
+          <span>סנכרון בזמן אמת</span>
+        </div>
+        <div class="verification-feature-item">
+          <span class="verification-feature-icon">👥</span>
+          <span>שיתוף עם המשפחה</span>
+        </div>
+        <div class="verification-feature-item">
+          <span class="verification-feature-icon">📶</span>
+          <span>עבודה ללא אינטרנט</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email Verification Error Page -->
+  <div id="verificationErrorPage" class="verification-page" style="display: none;">
+    <div class="verification-content">
+      <div class="verification-icon-wrapper">
+        <div class="verification-icon error">✕</div>
+      </div>
+      
+      <div class="verification-message">
+        <h1 class="verification-title">שגיאה באימות</h1>
+        <p class="verification-subtitle">
+          <strong>לא הצלחנו לאמת את האימייל שלך</strong>
+        </p>
+        <p class="verification-detail" id="verificationErrorDetail">
+          הקישור אולי פג תוקף או כבר נעשה בו שימוש.
+        </p>
+      </div>
+
+      <div class="verification-actions">
+        <button id="returnToLoginBtn" class="btn-secondary verification-btn">
+          חזרה לדף הכניסה
+        </button>
+        <button id="resendVerificationBtn" class="btn-link verification-link">
+          שלח קישור חדש
+        </button>
       </div>
     </div>
   </div>
@@ -752,5 +891,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script type="module" src="app.js"></script>
+  
+    </div><!-- .desktop-mobile-viewport -->
+  </div><!-- .desktop-container -->
 </body>
 </html>
