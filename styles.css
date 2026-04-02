@@ -1633,12 +1633,13 @@ body.desktop-mode::before {
   z-index: 0;
 }
 
+/* BUG FIX: Display container by default for mobile, only apply desktop styling when on desktop */
 .desktop-container {
-  display: none;
+  display: contents; /* Transparent wrapper on mobile - doesn't affect layout */
 }
 
 body.desktop-mode .desktop-container {
-  display: flex;
+  display: flex; /* Switch to flex layout on desktop */
   position: fixed;
   inset: 0;
   justify-content: center;
@@ -1648,9 +1649,15 @@ body.desktop-mode .desktop-container {
 }
 
 .desktop-mobile-viewport {
+  /* No special styling on mobile - acts as transparent wrapper */
   width: 100%;
-  max-width: 414px;
   height: 100%;
+  display: contents; /* Transparent on mobile */
+}
+
+body.desktop-mode .desktop-mobile-viewport {
+  /* Desktop-specific styling */
+  max-width: 414px;
   max-height: 896px;
   background: var(--bg);
   border-radius: 32px;
@@ -1673,17 +1680,21 @@ body.desktop-mode.dark-mode {
   }
 }
 
+/* BUG FIX: Updated responsive behavior for the new transparent wrapper approach */
 @media (max-width: 767px) {
+  /* Remove desktop background even if desktop-mode class is set on narrow screens */
   body.desktop-mode {
     background: var(--bg);
   }
   body.desktop-mode::before {
     display: none;
   }
+  /* Force transparent wrapper on mobile even if desktop-mode is set */
   body.desktop-mode .desktop-container {
     display: contents;
   }
-  .desktop-mobile-viewport {
+  body.desktop-mode .desktop-mobile-viewport {
+    display: contents;
     border-radius: 0;
     max-width: 100%;
     max-height: 100%;
