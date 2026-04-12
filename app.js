@@ -1537,19 +1537,8 @@ async function boot() {
           
           if (state.currentListId) {
             console.log('[BOOT] Current list ID exists:', state.currentListId);
-            await loadItems();
-            reRenderAll();
-            subscribeToList(state.currentListId, (payload) => {
-              handleRealtimeItemChange(payload);
-              reRenderAll();
-              setSyncChip('מסונכרן', 'connected');
-            }, setSyncChip);
-            state.responsibilityGroups = await loadResponsibilityGroups();
-            cachedGroups = state.responsibilityGroups;
-            renderResponsibilityOptions(cachedGroups);
-            renderResponsibilityFilter(cachedGroups);
-            
-            switchTab('list');
+            // Don't auto-load items or switch to list tab at boot.
+            // User will tap a list card on the home tab to enter it.
           } else {
             console.log('[BOOT] No current list ID');
           }
