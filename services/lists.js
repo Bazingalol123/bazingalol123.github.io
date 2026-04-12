@@ -24,7 +24,7 @@ export async function loadLists() {
   
   const { data, error } = await sb
     .from('lists')
-    .select(`id, name, created_by, list_members!inner(user_id), items(count)`)
+    .select(`id, name, created_by, list_members!inner(user_id, role, profiles(display_name, avatar_emoji)), items(count)`)
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -35,7 +35,13 @@ export async function loadLists() {
   state.lists = (data || []).map(l => ({
     id: l.id,
     name: l.name,
-    itemCount: l.items?.[0]?.count ?? 0
+    itemCount: l.items?.[0]?.count ?? 0,
+    members: (l.list_members || []).map(m => ({
+      userId: m.user_id,
+      role: m.role,
+      displayName: m.profiles?.display_name || '',
+      avatar: m.profiles?.avatar_emoji || '👤'
+    }))
   }));
   
   // Set current list if not set

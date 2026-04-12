@@ -6,16 +6,21 @@ export function initElements() {
     themeToggleBtn: document.getElementById('themeToggleBtn'),
     globalThemeToggle: document.getElementById('globalThemeToggle'),
     addItemForm: document.getElementById('addItemForm'),
-    generateQrBtn: document.getElementById('generateQrBtn'),
-    qrCodeContainer: document.getElementById('qrCodeContainer'),
     qrScannerDialog: document.getElementById('qrScannerDialog'),
     closeQrScannerBtn: document.getElementById('closeQrScannerBtn'),
     barcodeScannerDialog: document.getElementById('barcodeScannerDialog'),
     closeBarcodeScannerBtn: document.getElementById('closeBarcodeScannerBtn'),
     scanBarcodeBtn: document.getElementById('scanBarcodeBtn'),
-    showQrDialog: document.getElementById('showQrDialog'),
-    showQrContainer: document.getElementById('showQrContainer'),
-    closeShowQrBtn: document.getElementById('closeShowQrBtn'),
+    // Share dialog elements (replaced old showQrDialog)
+    shareDialog: document.getElementById('shareDialog'),
+    shareDialogClose: document.getElementById('shareDialogClose'),
+    shareCopyLink: document.getElementById('shareCopyLink'),
+    shareWhatsApp: document.getElementById('shareWhatsApp'),
+    shareNative: document.getElementById('shareNative'),
+    shareShowQr: document.getElementById('shareShowQr'),
+    shareQrSection: document.getElementById('shareQrSection'),
+    shareQrContainer: document.getElementById('shareQrContainer'),
+    shareListName: document.getElementById('shareListName'),
     scanProgressDialog: document.getElementById('scanProgressDialog'),
     scanProgressIcon: document.getElementById('scanProgressIcon'),
     scanProgressTitle: document.getElementById('scanProgressTitle'),
@@ -63,6 +68,10 @@ export function initElements() {
     homeAddListBtn: document.getElementById('homeAddListBtn'),
     searchProductBtn: document.getElementById('searchProductBtn'),
     currentListName: document.getElementById('currentListName'),
+    listPickerTrigger: document.getElementById('listPickerTrigger'),
+    listPickerDialog: document.getElementById('listPickerDialog'),
+    listPickerClose: document.getElementById('listPickerClose'),
+    listPickerItems: document.getElementById('listPickerItems'),
     landingSignUpBtn: document.getElementById('landingSignUpBtn'),
     landingSignInBtn: document.getElementById('landingSignInBtn'),
     // Prompt dialog elements
@@ -90,6 +99,11 @@ export function initElements() {
     quickAddCarousel: document.getElementById('quickAddCarousel'),
     quickAddTitle: document.getElementById('quickAddTitle'),
     quickAddModePersonal: document.getElementById('quickAddModePersonal'),
-    quickAddModeCommon: document.getElementById('quickAddModeCommon')
+    quickAddModeCommon: document.getElementById('quickAddModeCommon'),
+    // New list dialog elements (Task 5)
+    newListDialog: document.getElementById('newListDialog'),
+    newListNameInput: document.getElementById('newListName'),
+    newListDialogOk: document.getElementById('newListDialogOk'),
+    newListDialogCancel: document.getElementById('newListDialogCancel')
   };
 }

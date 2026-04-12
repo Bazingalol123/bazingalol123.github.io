@@ -275,8 +275,9 @@ export function renderItems(onToggle, onEdit, onDelete, onQuantityUpdate) {
  * Render lists in home screen
  * @param {Function} onSwitch - Switch list callback
  * @param {Function} onActions - List actions callback
+ * @param {Function} [onInvite] - Invite to list callback (listId, listName)
  */
-export function renderLists(onSwitch, onActions) {
+export function renderLists(onSwitch, onActions, onInvite) {
   const onboardingView = document.getElementById('onboardingView');
   const homeListsView = document.getElementById('homeListsView');
 
@@ -298,6 +299,22 @@ export function renderLists(onSwitch, onActions) {
       els.homeListsContainer.innerHTML = '';
       state.lists.forEach(list => {
         const isActive = list.id == state.currentListId;
+        const members = list.members || [];
+        const memberCount = members.length;
+
+        // Build member avatars HTML (up to 3)
+        const avatarsHtml = members.slice(0, 3).map(m =>
+          `<span class="member-avatar" title="${escapeHtml(m.displayName || '')}">${m.avatar || '👤'}</span>`
+        ).join('');
+        const moreAvatarsHtml = memberCount > 3
+          ? `<span class="member-avatar member-more">+${memberCount - 3}</span>`
+          : '';
+
+        // Right side: invite button if solo, member count if multiple
+        const memberActionHtml = memberCount <= 1
+          ? `<button class="list-card-invite-btn" data-list-id="${list.id}" data-list-name="${escapeHtml(list.name)}">+ הזמן</button>`
+          : `<span class="member-count">${memberCount} חברים</span>`;
+
         const card = document.createElement('div');
         card.className = `home-list-card${isActive ? ' active-list' : ''}`;
         card.innerHTML = `
@@ -309,10 +326,14 @@ export function renderLists(onSwitch, onActions) {
             <span>${list.itemCount || 0} פריטים</span>
             ${isActive ? '<span style="color:var(--primary); font-size:12px; font-weight: 700;">★ נבחר</span>' : ''}
           </div>
+          <div class="list-card-members">
+            <div class="member-avatars">${avatarsHtml}${moreAvatarsHtml}</div>
+            ${memberActionHtml}
+          </div>
         `;
         // Handle click on the card itself to switch list
         card.addEventListener('click', (e) => {
-          if (!e.target.closest('.list-more-btn')) {
+          if (!e.target.closest('.list-more-btn') && !e.target.closest('.list-card-invite-btn')) {
             onSwitch(list.id);
           }
         });
@@ -323,6 +344,15 @@ export function renderLists(onSwitch, onActions) {
           moreBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             onActions(list.id, list.name);
+          });
+        }
+
+        // Handle click on invite button
+        const inviteBtn = card.querySelector('.list-card-invite-btn');
+        if (inviteBtn && onInvite) {
+          inviteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onInvite(list.id, list.name);
           });
         }
         

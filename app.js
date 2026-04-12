@@ -89,6 +89,33 @@ let cachedListMembers = [];
 // List actions context
 let listActionsContext = { listId: null, listName: '' };
 
+// Share dialog state
+let currentShareUrl = null;
+
+/**
+ * Open the multi-option share dialog for a list.
+ * Exported so Task 5 (enhanced list creation) can call it.
+ */
+export async function openShareDialog(listId, listName) {
+  const url = await generateInviteQr(listId);
+  if (!url) return;
+  currentShareUrl = url;
+
+  // Set list name in subtitle
+  els.shareListName.textContent = listName;
+
+  // Reset QR section (hide it initially)
+  els.shareQrSection.style.display = 'none';
+  els.shareQrContainer.innerHTML = '';
+
+  // Show/hide native share button based on browser support
+  if (els.shareNative) {
+    els.shareNative.style.display = navigator.share ? 'flex' : 'none';
+  }
+
+  els.shareDialog.showModal();
+}
+
 // PWA Install Prompt
 let deferredInstallPrompt = null;
 
@@ -252,6 +279,16 @@ function reRenderAll() {
   if (state.activeTab === 'categories') renderCategories();
 }
 
+// Invite handler for list card invite buttons (Task 5)
+function handleInviteToList(listId, listName) {
+  openShareDialog(listId, listName);
+}
+
+async function refreshListCards() {
+  await loadLists();
+  renderLists(handleSwitchList, handleOpenListActions, handleInviteToList);
+}
+
 function switchTab(tab) {
   if (!tab) return;
   state.activeTab = tab;
@@ -363,6 +400,7 @@ async function handleAddItem(event) {
     await addItemToSupabase(payload);
     setSyncChip('נשמר', 'connected');
     silentRefresh();
+    refreshListCards(); // fire-and-forget: update item counts on Home tab
   } catch (error) {
     state.items = state.items.filter(i => i.rowId !== tempId);
     reRenderAll();
@@ -402,6 +440,7 @@ async function handleQuickAddItem(name, category) {
     await addItemToSupabase({ name, quantity: '1', category: category || '', notes: '', price: '', image: '' });
     setSyncChip('נשמר', 'connected');
     silentRefresh();
+    refreshListCards(); // fire-and-forget: update item counts on Home tab
   } catch (error) {
     state.items = state.items.filter(i => i.rowId !== tempId);
     reRenderAll();
@@ -484,6 +523,7 @@ async function handleDeleteItem(rowId) {
   try {
     await deleteItemFromSupabase(rowId);
     setSyncChip('נמחק', 'connected');
+    refreshListCards(); // fire-and-forget: update item counts on Home tab
   } catch (error) {
     state.items = prev;
     reRenderAll();
@@ -495,7 +535,7 @@ async function handleDeleteItem(rowId) {
 
 async function handleSwitchList(listId) {
   state.currentListId = listId;
-  renderLists(handleSwitchList, handleOpenListActions);
+  renderLists(handleSwitchList, handleOpenListActions, handleInviteToList);
   switchTab('list');
   await loadItems();
   reRenderAll();
@@ -688,7 +728,7 @@ function bindEvents() {
     state.lists = [];
     state.currentListId = null;
     reRenderAll();
-    renderLists(handleSwitchList, handleOpenListActions);
+    renderLists(handleSwitchList, handleOpenListActions, handleInviteToList);
   });
 
   document.getElementById('saveDisplayNameBtn')?.addEventListener('click', async () => {
@@ -946,39 +986,62 @@ function bindEvents() {
     });
   }
 
-  // Home list management
-  const handleCreateNewList = async () => {
-    const name = await showPromptDialog('רשימה חדשה', 'שם הרשימה', 'רשימת קניות');
-    if (!name) return;
+  // Home list management — enhanced with #newListDialog (Task 5)
+  const handleCreateNewList = () => {
+    if (!els.newListDialog) return;
+    els.newListDialog.showModal();
+    if (els.newListNameInput) {
+      els.newListNameInput.value = '';
+      els.newListNameInput.focus();
+    }
+    // Reset type to shopping
+    const shoppingRadio = els.newListDialog.querySelector('input[value="shopping"]');
+    if (shoppingRadio) shoppingRadio.checked = true;
+  };
+
+  // New list dialog — OK button handler
+  els.newListDialogOk?.addEventListener('click', async () => {
+    const name = els.newListNameInput?.value?.trim();
+    if (!name) {
+      showMessage('נא להזין שם לרשימה', true);
+      return;
+    }
+
+    // Get selected type (stored for future use)
+    const typeRadio = els.newListDialog.querySelector('input[name="newListType"]:checked');
+    const listType = typeRadio?.value || 'shopping';
+
+    els.newListDialog.close();
+
     const newListId = await createList(name);
     if (newListId) {
+      await refreshListCards();
       await handleSwitchList(newListId);
-      // Wait for UI to update, then show First Action Tooltip
+
+      // Show share dialog so user can invite people
       setTimeout(() => {
-        const fab = document.getElementById('mainFab');
-        const tooltip = document.createElement('div');
-        tooltip.className = 'first-action-tooltip';
-        tooltip.innerHTML = `
-          <strong>הגעתם לרשימה החדשה!</strong>
-          <br>לחצו כאן או על פריט מהיר כדי להוסיף את הפריט הראשון.
-          <button class="tooltip-close">הבנתי</button>
-        `;
-        document.body.appendChild(tooltip);
-        
-        // Position tooltip near the FAB
-        if (fab) {
-          const rect = fab.getBoundingClientRect();
-          tooltip.style.position = 'fixed';
-          tooltip.style.bottom = (window.innerHeight - rect.top + 16) + 'px';
-          tooltip.style.left = '24px';
-          tooltip.style.zIndex = '1000';
-          
-          tooltip.querySelector('.tooltip-close').onclick = () => tooltip.remove();
-          setTimeout(() => { if (document.body.contains(tooltip)) tooltip.remove(); }, 8000);
-        }
-      }, 500);
+        openShareDialog(newListId, name);
+      }, 400);
     }
-  };
+  });
+
+  // New list dialog — Cancel button handler
+  els.newListDialogCancel?.addEventListener('click', () => {
+    els.newListDialog.close();
+  });
+
+  // New list dialog — Close on backdrop click
+  els.newListDialog?.addEventListener('click', (e) => {
+    if (e.target === els.newListDialog) els.newListDialog.close();
+  });
+
+  // New list dialog — Submit on Enter key in name input
+  els.newListNameInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      els.newListDialogOk?.click();
+    }
+  });
 
   els.homeAddListBtn?.addEventListener('click', handleCreateNewList);
   document.getElementById('onboardingCreateListBtn')?.addEventListener('click', handleCreateNewList);
@@ -1074,8 +1137,7 @@ function bindEvents() {
     if (!newName) return;
     els.listActionsDialog.close();
     await renameList(listActionsContext.listId, newName);
-    await loadLists();
-    renderLists(handleSwitchList, handleOpenListActions);
+    await refreshListCards();
   });
 
   els.listActionDuplicate?.addEventListener('click', async () => {
@@ -1083,43 +1145,134 @@ function bindEvents() {
     if (!newName) return;
     els.listActionsDialog.close();
     const newListId = await duplicateList(listActionsContext.listId, newName);
+    await refreshListCards();
     if (newListId) await handleSwitchList(newListId);
   });
 
+  // Share list — open multi-option share dialog
   els.listActionShareQr?.addEventListener('click', async () => {
     els.listActionsDialog.close();
-    const inviteUrl = await generateInviteQr(listActionsContext.listId);
-    if (inviteUrl) {
-      els.showQrContainer.innerHTML = '';
-      new QRCode(els.showQrContainer, {
-        text: inviteUrl,
+    await openShareDialog(listActionsContext.listId, listActionsContext.listName);
+  });
+
+  // ── Share dialog events ────────────────────────────────────────
+  els.shareDialogClose?.addEventListener('click', () => els.shareDialog.close());
+  els.shareDialog?.addEventListener('click', (e) => {
+    if (e.target === els.shareDialog) els.shareDialog.close();
+  });
+
+  // Copy Link
+  els.shareCopyLink?.addEventListener('click', async () => {
+    if (!currentShareUrl) return;
+    try {
+      await navigator.clipboard.writeText(currentShareUrl);
+      showMessage('הקישור הועתק! 📋');
+    } catch {
+      // Fallback for older browsers
+      const ta = document.createElement('textarea');
+      ta.value = currentShareUrl;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showMessage('הקישור הועתק! 📋');
+    }
+  });
+
+  // WhatsApp share
+  els.shareWhatsApp?.addEventListener('click', () => {
+    if (!currentShareUrl) return;
+    const listName = els.shareListName.textContent;
+    const text = `הצטרף/י לרשימה "${listName}" 🛒\n${currentShareUrl}`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(whatsappUrl, '_blank');
+  });
+
+  // Native share (Web Share API)
+  els.shareNative?.addEventListener('click', async () => {
+    if (!currentShareUrl || !navigator.share) return;
+    const listName = els.shareListName.textContent;
+    try {
+      await navigator.share({
+        title: `רשימת קניות - ${listName}`,
+        text: `הצטרף/י לרשימה "${listName}" 🛒`,
+        url: currentShareUrl
+      });
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        showMessage('השיתוף נכשל', true);
+      }
+    }
+  });
+
+  // Show QR code (toggle)
+  els.shareShowQr?.addEventListener('click', () => {
+    if (!currentShareUrl) return;
+    if (els.shareQrSection.style.display === 'none') {
+      els.shareQrSection.style.display = 'block';
+      els.shareQrContainer.innerHTML = '';
+      new QRCode(els.shareQrContainer, {
+        text: currentShareUrl,
         width: 200,
         height: 200,
         colorDark: '#000000',
         colorLight: '#ffffff',
         correctLevel: QRCode.CorrectLevel.M
       });
-      els.showQrDialog.showModal();
+    } else {
+      els.shareQrSection.style.display = 'none';
     }
   });
-
-  els.closeShowQrBtn?.addEventListener('click', () => els.showQrDialog.close());
 
   els.listActionClear?.addEventListener('click', async () => {
     els.listActionsDialog.close();
     await clearCompleted(listActionsContext.listId);
     reRenderAll();
+    await refreshListCards();
   });
 
   els.listActionDelete?.addEventListener('click', async () => {
     const confirmed = await showConfirmDialog('מחיקת רשימה', `האם למחוק את הרשימה "${listActionsContext.listName}"?`);
     if (!confirmed) return;
     els.listActionsDialog.close();
-    const newListId = await deleteList(listActionsContext.listId);
-    if (newListId) await handleSwitchList(newListId);
+    const deletedListId = listActionsContext.listId;
+    const newListId = await deleteList(deletedListId);
+    if (newListId) {
+      await handleSwitchList(newListId);
+    }
+    await refreshListCards();
   });
 
   els.listActionsClose?.addEventListener('click', () => els.listActionsDialog.close());
+
+  // ── List Picker (header dropdown) ──
+  els.listPickerTrigger?.addEventListener('click', () => {
+    const container = els.listPickerItems;
+    container.innerHTML = '';
+
+    for (const list of state.lists) {
+      const btn = document.createElement('button');
+      btn.className = 'list-picker-item' + (list.id === state.currentListId ? ' active' : '');
+      btn.innerHTML = `
+        <span class="list-picker-item-name">${list.name}</span>
+        <span class="list-picker-item-count">${list.itemCount ?? ''} פריטים</span>
+      `;
+      btn.addEventListener('click', () => {
+        els.listPickerDialog.close();
+        if (list.id !== state.currentListId) {
+          handleSwitchList(list.id);
+        }
+      });
+      container.appendChild(btn);
+    }
+
+    els.listPickerDialog.showModal();
+  });
+
+  els.listPickerClose?.addEventListener('click', () => els.listPickerDialog.close());
+  els.listPickerDialog?.addEventListener('click', (e) => {
+    if (e.target === els.listPickerDialog) els.listPickerDialog.close();
+  });
 
   // Quick-add mode toggle
   els.quickAddModePersonal?.addEventListener('click', () => {
@@ -1380,7 +1533,7 @@ async function boot() {
         try {
           await loadLists();
           console.log('[BOOT] Lists loaded, state.lists:', state.lists.length);
-          renderLists(handleSwitchList, handleOpenListActions);
+          renderLists(handleSwitchList, handleOpenListActions, handleInviteToList);
           
           if (state.currentListId) {
             console.log('[BOOT] Current list ID exists:', state.currentListId);

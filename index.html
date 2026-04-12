@@ -206,7 +206,12 @@
         <div style="display: flex; align-items: center; gap: 16px;">
           <div>
             <h1>רשימת קניות משותפת</h1>
-            <p id="currentListName" class="muted" style="margin: 4px 0 0;"></p>
+            <button class="list-picker-trigger muted" id="listPickerTrigger" style="margin: 4px 0 0;">
+              <span id="currentListName"></span>
+              <svg class="list-picker-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
           </div>
         </div>
         <button id="globalThemeToggle" class="icon-btn" aria-label="החלף עיצוב" style="font-size: 1.4rem; background: transparent; border: none; cursor: pointer; padding: 4px;">🌙</button>
@@ -333,15 +338,15 @@
       </button>
       <div class="fab-menu" id="fabMenu">
         <div class="fab-action-wrapper">
-          <span class="fab-label">הוספה ידנית</span>
+          <span class="fab-label">הוסף פריט</span>
           <button class="fab-action" id="fabAddManual" title="הוספה ידנית">
             <span class="fab-action-icon">✏️</span>
           </button>
         </div>
         <div class="fab-action-wrapper">
-          <span class="fab-label">סריקת קוד QR</span>
-          <button class="fab-action" id="fabScanQr" title="הצטרפות עם קוד QR">
-            <span class="fab-action-icon">📷</span>
+          <span class="fab-label">הצטרפות לרשימה</span>
+          <button class="fab-action" id="fabScanQr" title="הצטרפות לרשימה">
+            <span class="fab-action-icon">🔗</span>
           </button>
         </div>
         <div class="fab-action-wrapper">
@@ -737,6 +742,8 @@
         </div>
       </div>
 
+      <p class="new-list-share-hint">💡 אחרי היצירה תוכל/י להזמין אנשים לרשימה</p>
+
       <div class="dialog-actions">
         <button id="newListDialogOk" class="btn-primary">צור רשימה</button>
         <button id="newListDialogCancel" class="btn-secondary">ביטול</button>
@@ -758,8 +765,8 @@
           <span>שכפול רשימה</span>
         </button>
         <button id="listActionShareQr" class="list-action-btn">
-          <span class="action-icon">📱</span>
-          <span>שתף רשימה ב־QR</span>
+          <span class="action-icon">📤</span>
+          <span>שתף רשימה</span>
         </button>
         <button id="listActionClear" class="list-action-btn">
           <span class="action-icon">🧹</span>
@@ -780,13 +787,50 @@
     </div>
   </dialog>
 
-  <dialog id="showQrDialog" class="app-dialog" aria-labelledby="showQrDialogTitle">
-    <div class="dialog-content" style="text-align: center;">
-      <h3 id="showQrDialogTitle">קוד QR להצטרפות</h3>
-      <p class="muted">סרקו כדי להצטרף ישירות לרשימה זו</p>
-      <div id="showQrContainer" style="display: inline-block; background: white; padding: 16px; border-radius: var(--radius-lg); margin: 16px 0;"></div>
-      <div class="dialog-actions">
-        <button type="button" id="closeShowQrBtn" class="btn-secondary">סגירה</button>
+  <!-- List Picker Dialog -->
+  <dialog id="listPickerDialog" class="app-dialog">
+    <div class="dialog-content bottom-sheet">
+      <div class="dialog-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <h3>בחר רשימה</h3>
+        <button class="dialog-close-btn" id="listPickerClose" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-secondary);">✕</button>
+      </div>
+      <div class="list-picker-items" id="listPickerItems">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Share Dialog (replaces old showQrDialog) -->
+  <dialog id="shareDialog" class="app-dialog" aria-labelledby="shareDialogTitle">
+    <div class="dialog-content bottom-sheet">
+      <div class="dialog-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 id="shareDialogTitle">שיתוף רשימה</h3>
+        <button class="dialog-close-btn" id="shareDialogClose" aria-label="סגירה">✕</button>
+      </div>
+      <p class="share-subtitle" id="shareListName"></p>
+
+      <div class="share-options-grid">
+        <button class="share-option-btn" id="shareCopyLink">
+          <span class="share-option-icon">📋</span>
+          <span class="share-option-label">העתק קישור</span>
+        </button>
+        <button class="share-option-btn" id="shareWhatsApp">
+          <span class="share-option-icon">💬</span>
+          <span class="share-option-label">WhatsApp</span>
+        </button>
+        <button class="share-option-btn" id="shareNative">
+          <span class="share-option-icon">📤</span>
+          <span class="share-option-label">שיתוף...</span>
+        </button>
+        <button class="share-option-btn" id="shareShowQr">
+          <span class="share-option-icon">📱</span>
+          <span class="share-option-label">קוד QR</span>
+        </button>
+      </div>
+
+      <div class="share-qr-section" id="shareQrSection" style="display:none;">
+        <div id="shareQrContainer"></div>
+        <p class="share-qr-hint">סרקו את הקוד כדי להצטרף לרשימה</p>
       </div>
     </div>
   </dialog>
